@@ -380,6 +380,65 @@ input,textarea,select{font-family:inherit;}
 #install-btn{display:none;position:fixed;bottom:88px;right:16px;z-index:350;background:var(--day-accent-bg);color:var(--day-accent-text);border:.5px solid var(--day-accent);border-radius:20px;padding:10px 16px;font-size:13px;font-weight:700;align-items:center;gap:6px;box-shadow:0 2px 12px rgba(0,0,0,.15);}
 .toast{position:fixed;bottom:92px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:9px 18px;border-radius:20px;font-size:13px;font-weight:600;white-space:nowrap;opacity:0;transition:opacity .2s;pointer-events:none;z-index:999;}
 .toast.show{opacity:1;}
+
+/* ── SMART MEAL HIGHLIGHT ─────────────────────────────────── */
+.meal-card.suggested-meal .meal-head {
+  background: var(--day-accent-bg);
+  border-left: 3px solid var(--day-accent);
+}
+.meal-card.suggested-meal .meal-name::after {
+  content: ' ← ora';
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--day-accent-text);
+  opacity: .8;
+}
+
+/* ── SEARCH CACHE / FAVORITES SECTION ────────────────────── */
+.search-section-lbl {
+  font-size: 10px; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--text3);
+  padding: 6px 0 4px;
+}
+.search-cached-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; border-bottom: .5px solid var(--border);
+  cursor: pointer; background: var(--surface2); border-radius: 0;
+}
+.search-cached-row:first-of-type { border-radius: var(--r-sm) var(--r-sm) 0 0; }
+.search-cached-row:last-of-type  { border-bottom: none; border-radius: 0 0 var(--r-sm) var(--r-sm); }
+.search-cached-row:active { opacity: .75; }
+.scr-icon { font-size: 14px; flex-shrink: 0; }
+.scr-name { font-size: 13px; font-weight: 500; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scr-kcal { font-size: 12px; color: var(--text2); flex-shrink: 0; }
+.search-clear-btn { font-size: 11px; color: var(--text3); padding: 4px 0; background: none; border: none; }
+
+/* ── BODY CORRELATION CHART ──────────────────────────────── */
+.corr-chart-card {
+  background: var(--surface); border: .5px solid var(--border);
+  border-radius: var(--r-md); padding: 14px; margin: 0 16px 14px;
+}
+.corr-chart-card h3 { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+.corr-chart-card p  { font-size: 12px; color: var(--text2); margin-bottom: 10px; line-height: 1.5; }
+.corr-svg { width: 100%; height: 120px; overflow: visible; }
+.corr-legend { display: flex; gap: 14px; margin-top: 6px; flex-wrap: wrap; }
+.corr-leg-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text2); }
+.corr-leg-dot  { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.corr-leg-line { width: 14px; height: 2px; flex-shrink: 0; }
+.corr-insight {
+  background: var(--day-accent-bg); border-radius: var(--r-sm);
+  padding: 9px 12px; margin-top: 10px;
+  font-size: 12px; color: var(--day-accent-text); line-height: 1.5;
+}
+
+/* ── NOTIF BADGE ON NAV ──────────────────────────────────── */
+.nav-badge {
+  position: absolute; top: 6px; right: calc(50% - 14px);
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--red); border: 1.5px solid var(--bg);
+}
+.nav-btn { position: relative; }
+
 </style>
 </head>
 <body>
@@ -506,7 +565,21 @@ input,textarea,select{font-family:inherit;}
       <span style="font-size:10px;color:#3b6d11">── Muscoli</span>
     </div>
   </div>
-  <div class="section-blk" style="padding-bottom:0"><div class="sec-title">Storico check-in</div></div>
+  
+<!-- CORRELATION CHART: kcal vs composizione -->
+<div class="corr-chart-card" id="corr-chart-card" style="display:none">
+  <h3>📈 Kcal medie ↔ Composizione corporea</h3>
+  <p>Correlazione tra calorie settimanali medie e variazione di peso/massa muscolare nel tempo.</p>
+  <svg class="corr-svg" id="corr-svg" viewBox="0 0 340 120" preserveAspectRatio="none"></svg>
+  <div class="corr-legend">
+    <div class="corr-leg-item"><div class="corr-leg-line" style="background:#185fa5"></div>Kcal medie (scala sx)</div>
+    <div class="corr-leg-item"><div class="corr-leg-dot"  style="background:var(--kcal-c)"></div>Peso kg (scala dx)</div>
+    <div class="corr-leg-item"><div class="corr-leg-dot"  style="background:#3b6d11"></div>Muscoli kg (scala dx)</div>
+  </div>
+  <div class="corr-insight" id="corr-insight" style="display:none"></div>
+</div>
+
+<div class="section-blk" style="padding-bottom:0"><div class="sec-title">Storico check-in</div></div>
   <div class="comp-list" id="comp-list"></div>
 </div>
 
@@ -646,7 +719,7 @@ input,textarea,select{font-family:inherit;}
     <!-- SEARCH TAB -->
     <div class="tab-pane active" id="spane-search">
       <div class="search-row">
-        <input type="text" class="sheet-input" id="search-q" placeholder="Es. tempeh, yogurt greco, avena…" style="margin-bottom:0" autocomplete="off" inputmode="search" onkeydown="if(event.key==='Enter')doSearch()">
+        <input type="text" class="sheet-input" id="search-q" placeholder="Es. tempeh, yogurt greco, avena…" style="margin-bottom:0" autocomplete="off" inputmode="search" oninput="onSearchInput(this.value)" onkeydown="if(event.key==='Enter')doSearch()">
         <button class="btn-go" onclick="doSearch()">Cerca</button>
       </div>
       <div id="search-results">
@@ -1151,8 +1224,9 @@ function renderHero(){
   document.getElementById('day-hero').style.background=
     `linear-gradient(140deg,var(--day-h1) 0%,var(--day-h2) 55%,var(--day-h3) 100%)`;
   document.getElementById('hero-icon').textContent=isRest?'🛌':'🏋️';
+  const unsavedShowing=document.getElementById('unsaved-dot')?.classList.contains('show');
   document.getElementById('hero-day-type').innerHTML=(isRest?'Rest Day':'Training Day')
-    +'<span class="unsaved-indicator" id="unsaved-dot"'+(document.getElementById('unsaved-dot')?.classList.contains('show')?' class="unsaved-indicator show"':'')+'></span>';
+    +'<span class="unsaved-indicator'+(unsavedShowing?' show':'')+'" id="unsaved-dot"></span>';
   const t=targets()[dayType];
   document.getElementById('hero-subtitle').textContent=`Target: ${t.kcal} kcal · P${t.p}g`;
   const ph=PHASES.find(p=>p.id===activePhase);
@@ -1167,6 +1241,40 @@ function renderHero(){
   const calType=calendar[todayDow()];
   const hint=document.getElementById('hero-hint');
   hint.textContent=(calType&&calType!==dayType)?`📅 Il tuo calendario suggerisce ${calType==='training'?'Training':'Rest'}`:'';
+}
+
+// ── SMART MEAL: which meal is current based on time ─────────
+function getCurrentMealKey(){
+  const h=new Date().getHours();
+  if(h>=5  && h<10)  return 'colazione';
+  if(h>=10 && h<12)  return 'spuntino_pre';
+  if(h>=12 && h<15)  return 'pranzo';
+  if(h>=15 && h<19)  return 'spuntino_post';
+  if(h>=19 || h<5)   return 'cena';
+  return null;
+}
+
+function highlightCurrentMeal(){
+  const key=getCurrentMealKey();
+  document.querySelectorAll('.meal-card').forEach(card=>{
+    card.classList.remove('suggested-meal');
+  });
+  if(!key) return;
+  // find meal card for this key — stored as data attr on parent
+  MEAL_KEYS.forEach((k,idx)=>{
+    const cards=document.querySelectorAll('.meal-card');
+    if(cards[idx]&&k===key){
+      // Only highlight if meal is empty
+      if(!logged[k]||logged[k].length===0){
+        cards[idx].classList.add('suggested-meal');
+        // Scroll into view on first load
+        if(window._firstMealHighlight){
+          cards[idx].scrollIntoView({behavior:'smooth',block:'center'});
+          window._firstMealHighlight=false;
+        }
+      }
+    }
+  });
 }
 
 function updateUnsavedDot(){
@@ -1268,6 +1376,7 @@ function renderMeals(){
   });
 
   initSwipe();
+  highlightCurrentMeal();
 }
 
 // ── swipe delete ─────────────────────────────────────────────
@@ -1414,12 +1523,18 @@ function openAddFood(key,tab){
   document.getElementById('add-food-title').textContent='Aggiungi a '+MEAL_LABELS[key].replace(/^.+? /,'');
   openOverlay('add-food-ol');
   switchTab(tab||'search');
+  // Show initial state (favorites + recent cache)
+  if(!tab||tab==='search'){
+    document.getElementById('search-q').value='';
+    clearDBPortion();
+    renderSearchInitialState();
+  }
 }
 function closeAddFood(){
   closeOverlay('add-food-ol'); stopScan();
   ['m-name','m-kcal','m-prot','m-carb','m-fat'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('search-q').value='';
-  document.getElementById('search-results').innerHTML='<div class="search-status">Cerca su Open Food Facts (3M+ prodotti)</div>';
+  renderSearchInitialState();
   clearDBPortion(); clearBC();
 }
 document.getElementById('add-food-ol').addEventListener('click',e=>{ if(e.target===document.getElementById('add-food-ol')) closeAddFood(); });
@@ -1434,18 +1549,149 @@ function switchTab(tab){
 
 // ── Open Food Facts ──────────────────────────────────────────
 let _searchProds=[];
+let _searchCache=JSON.parse(localStorage.getItem('nt_search_cache')||'[]'); // [{q,prod,ts}]
+let _searchTimer=null;
+const CACHE_MAX=20;
+const CACHE_TTL=7*24*60*60*1000; // 7 days
+
+function saveSearchCache(){
+  try{ localStorage.setItem('nt_search_cache',JSON.stringify(_searchCache.slice(0,CACHE_MAX))); }catch{}
+}
+
+function getFromCache(q){
+  const lq=q.toLowerCase().trim();
+  const now=Date.now();
+  // Purge expired
+  _searchCache=_searchCache.filter(e=>now-e.ts<CACHE_TTL);
+  const hit=_searchCache.find(e=>e.q===lq);
+  if(hit){ // Move to front (LRU)
+    _searchCache=_searchCache.filter(e=>e.q!==lq);
+    _searchCache.unshift(hit);
+    return hit.prods;
+  }
+  return null;
+}
+
+function addToCache(q,prods){
+  const lq=q.toLowerCase().trim();
+  _searchCache=_searchCache.filter(e=>e.q!==lq);
+  _searchCache.unshift({q:lq,prods,ts:Date.now()});
+  _searchCache=_searchCache.slice(0,CACHE_MAX);
+  saveSearchCache();
+}
+
+function renderSearchInitialState(){
+  const el=document.getElementById('search-results');
+  // Show favorites + recent cache entries
+  let html='';
+  if(favorites.length){
+    html+=`<div class="search-section-lbl">⭐ Preferiti</div>`;
+    html+=`<div class="search-results">`;
+    html+=favorites.map((f,i)=>`
+      <div class="search-cached-row" onclick="selectCachedFav(${i})">
+        <span class="scr-icon">⭐</span>
+        <span class="scr-name">${f.n}</span>
+        <span class="scr-kcal">${f.k} kcal</span>
+      </div>`).join('');
+    html+=`</div>`;
+  }
+  const recent=_searchCache.slice(0,5);
+  if(recent.length){
+    html+=`<div class="search-section-lbl" style="margin-top:10px">🕐 Recenti</div>`;
+    html+=`<div class="search-results">`;
+    html+=recent.map((e,i)=>`
+      <div class="search-cached-row" onclick="searchFromCache('${e.q.replace(/'/g,"\'")}')">
+        <span class="scr-icon">🔍</span>
+        <span class="scr-name">${e.q}</span>
+        <span class="scr-kcal">${e.prods.length} risultati</span>
+      </div>`).join('');
+    html+=`</div>`;
+    html+=`<button class="search-clear-btn" onclick="clearSearchCache()">Cancella recenti</button>`;
+  }
+  if(!html) html='<div class="search-status">Cerca su Open Food Facts (3M+ prodotti)</div>';
+  el.innerHTML=html;
+}
+
+function selectCachedFav(idx){
+  const f=favorites[idx];
+  if(!f) return;
+  // treat as a product with per-g data derived from portion
+  const m=f.n.match(/(\d+)\s*g/i);
+  const bg=m?parseInt(m[1]):100;
+  // Build a pseudo-product object
+  _dbProd={
+    product_name:f.n,
+    product_name_it:null,
+    brands:null,
+    _isCached:true,
+    nutriments:{
+      'energy-kcal_100g':r1(f.k/bg*100),
+      'proteins_100g':r1(f.p/bg*100),
+      'carbohydrates_100g':r1(f.c/bg*100),
+      'fat_100g':r1(f.f/bg*100),
+    },
+    serving_size:String(bg)
+  };
+  document.getElementById('search-results').style.display='none';
+  document.getElementById('db-portion').style.display='block';
+  document.getElementById('pp-name').textContent=f.n;
+  document.getElementById('pp-brand').textContent='⭐ Preferito';
+  document.getElementById('pp-g').value=bg; setQGActive('pp-g-qg',bg);
+  previewPP();
+  document.getElementById('pp-fav-btn').disabled=true;
+  document.getElementById('pp-fav-btn').textContent='✅ Già preferito';
+}
+
+function searchFromCache(q){
+  document.getElementById('search-q').value=q;
+  doSearch();
+}
+
+function clearSearchCache(){
+  _searchCache=[];
+  saveSearchCache();
+  renderSearchInitialState();
+  toast('Recenti cancellati');
+}
+
+function onSearchInput(val){
+  clearTimeout(_searchTimer);
+  if(!val.trim()){ renderSearchInitialState(); clearDBPortion(); return; }
+  _searchTimer=setTimeout(()=>doSearch(),350);
+}
+
 async function doSearch(){
   const q=document.getElementById('search-q').value.trim();
-  if(!q) return;
+  if(!q){ renderSearchInitialState(); return; }
   const el=document.getElementById('search-results');
-  el.innerHTML='<div class="search-status">🔍 Ricerca in corso…</div>';
   clearDBPortion();
+  // Check cache first
+  const cached=getFromCache(q);
+  if(cached){
+    _searchProds=cached;
+    renderSearchResults(q,cached,true);
+    return;
+  }
+  el.innerHTML='<div class="search-status">🔍 Ricerca in corso…</div>';
   try{
     const url=`https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=15&lc=it&cc=it&fields=product_name,product_name_it,brands,nutriments,serving_size`;
     const data=await(await fetch(url)).json();
     _searchProds=(data.products||[]).filter(p=>p.product_name&&p.nutriments?.['energy-kcal_100g']!=null);
     if(!_searchProds.length){ el.innerHTML='<div class="search-status">Nessun risultato. Prova un termine diverso.</div>'; return; }
-    el.innerHTML=_searchProds.map((p,i)=>{
+    addToCache(q,_searchProds);
+    renderSearchResults(q,_searchProds,false);
+  }catch{
+    el.innerHTML='<div class="search-status">⚠ Errore di rete. Controlla la connessione.</div>';
+  }
+}
+
+function renderSearchResults(q,prods,fromCache){
+  const el=document.getElementById('search-results');
+  el.style.display='block';
+  const cacheLabel=fromCache?'<span style="font-size:10px;color:var(--text3);margin-left:6px">• dalla cache</span>':'';
+  el.innerHTML=`<div class="search-section-lbl">${prods.length} risultati per "${q}"${cacheLabel}</div>`
+    +`<div class="search-results">`
+    +prods.map((p,i)=>{
       const nm=p.product_name_it||p.product_name;
       const br=p.brands?.split(',')[0].trim()||'';
       const n=p.nutriments;
@@ -1453,8 +1699,8 @@ async function doSearch(){
         <div class="sri-name">${nm}</div>${br?`<div class="sri-brand">${br}</div>`:''}
         <div class="sri-macros">${Math.round(n['energy-kcal_100g']||0)} kcal · P${r1(n['proteins_100g']||0)}g · C${r1(n['carbohydrates_100g']||0)}g · F${r1(n['fat_100g']||0)}g <span style="color:var(--text3)">(per 100g)</span></div>
       </div>`;
-    }).join('');
-  }catch{ el.innerHTML='<div class="search-status">⚠ Errore di rete.</div>'; }
+    }).join('')
+    +`</div>`;
 }
 function selectDBProd(i){
   _dbProd=_searchProds[i];
@@ -1623,544 +1869,4 @@ setInterval(()=>{ if(Object.values(logged).flat().length){ LS.set('nt_'+today(),
 window.addEventListener('visibilitychange',()=>{ if(document.hidden&&Object.values(logged).flat().length) LS.set('nt_'+today(),{date:today(),dayType,logged,notes:mealNotes,planId:activePlanId,savedAt:new Date().toISOString(),auto:true}); });
 window.addEventListener('beforeunload',()=>{ if(Object.values(logged).flat().length) LS.set('nt_'+today(),{date:today(),dayType,logged,notes:mealNotes,planId:activePlanId,savedAt:new Date().toISOString(),auto:true}); });
 
-// ── COPY DAY ─────────────────────────────────────────────────
-function copyDayToToday(dateStr){
-  const s=LS.get('nt_'+dateStr,null); if(!s) return;
-  logged=JSON.parse(JSON.stringify(s.logged));
-  dayType=s.dayType; mealNotes=s.notes||mealNotes;
-  setDay(dayType,true); showPage('log'); toast('📋 Giornata copiata come base');
-}
-
-// ══════════════════════════════════════════════════════════════
-//  SUMMARY + SHARE
-// ══════════════════════════════════════════════════════════════
-function showSummary(){
-  const t=targets()[dayType];
-  let tK=0,tP=0,tC=0,tF=0;
-  Object.values(logged).forEach(arr=>arr.forEach(i=>{ tK+=i.k; tP+=i.p; tC+=i.c; tF+=i.f; }));
-  function card(lbl,val,tgt,unit){
-    const pct=Math.round((val/tgt)*100);
-    const cls=pct<85?'warn':pct>110?'over':'ok';
-    const d=Math.round(val-tgt);
-    const ds=d>0?`+${d}${unit} sopra`:d<0?`${Math.abs(d)}${unit} mancanti`:'✓ Target centrato';
-    return `<div class="sum-card ${cls}"><div class="sc-val">${Math.round(val)}${unit}</div><div class="sc-lbl">${lbl}</div><div class="sc-delta">${ds}</div></div>`;
-  }
-  document.getElementById('sum-grid').innerHTML=card('Calorie',tK,t.kcal,'')+card('Proteine',tP,t.p,'g')+card('Carboidrati',tC,t.c,'g')+card('Grassi',tF,t.f,'g');
-  document.getElementById('sum-title').textContent=(dayType==='training'?'Training 🏋️':'Rest 🛌')+' — salvata ✅';
-  openOverlay('summary-ol');
-}
-
-async function shareDay(){
-  const t=targets()[dayType];
-  let tK=0,tP=0,tC=0,tF=0;
-  Object.values(logged).forEach(arr=>arr.forEach(i=>{ tK+=i.k; tP+=i.p; tC+=i.c; tF+=i.f; }));
-  const canvas=document.createElement('canvas'); canvas.width=800; canvas.height=460;
-  const ctx=canvas.getContext('2d');
-  const dark=window.matchMedia('(prefers-color-scheme:dark)').matches;
-  const bg=dark?'#1c1c1a':'#f4f3f0'; const fg=dark?'#f0efe8':'#181816'; const fg2=dark?'#98978e':'#68685f';
-  const th=THEMES.find(x=>x.id===activeTheme)||THEMES[0];
-  const acc=(dayType==='training'?th.tr:th.re)[1];
-  function rr(x,y,w,h,r){ ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();ctx.fill(); }
-  ctx.fillStyle=bg;ctx.fillRect(0,0,800,460);
-  ctx.fillStyle=acc;rr(0,0,800,64,0);
-  ctx.fillStyle='#fff';ctx.font='bold 20px -apple-system,sans-serif';ctx.fillText('🥗 NutriTrack – '+fmtDate(today()),20,38);
-  ctx.font='13px -apple-system,sans-serif';ctx.fillText((dayType==='training'?'Training 🏋️':'Rest 🛌'),20,56);
-  [[`${Math.round(tK)}`,t.kcal,'Calorie',''],[`${Math.round(tP)}g`,t.p,'Proteine','g'],[`${Math.round(tC)}g`,t.c,'Carbo','g'],[`${Math.round(tF)}g`,t.f,'Grassi','g']].forEach(([v,tgt,lbl,u],i)=>{
-    const x=20+i*192,y=78,w=180,h=90;
-    const pct=parseFloat(v)/tgt;
-    ctx.fillStyle=pct>1.1?(dark?'#3a0c0c':'#fdeaea'):pct<0.85?(dark?'#2a1800':'#fef0d8'):(dark?'#142e02':'#e8f5dd');rr(x,y,w,h,10);
-    ctx.fillStyle=fg;ctx.font='bold 24px -apple-system,sans-serif';ctx.fillText(v,x+12,y+34);
-    ctx.fillStyle=fg2;ctx.font='12px -apple-system,sans-serif';ctx.fillText(lbl,x+12,y+52);
-    ctx.fillStyle=dark?'#2e2e2a':'#e0dfd8';rr(x+12,y+62,154,5,3);
-    ctx.fillStyle=pct>1.1?'#991f1f':acc;rr(x+12,y+62,Math.min(154,Math.round(154*pct)),5,3);
-  });
-  ctx.fillStyle=fg;ctx.font='bold 13px -apple-system,sans-serif';ctx.fillText('Alimenti loggati',20,200);
-  let iy=218,col=0;
-  Object.values(logged).flat().slice(0,14).forEach(item=>{
-    const x=col===0?20:420;
-    ctx.fillStyle=fg;ctx.font='12px -apple-system,sans-serif';ctx.fillText(item.n.length>30?item.n.slice(0,28)+'…':item.n,x,iy);
-    ctx.fillStyle=fg2;ctx.font='11px -apple-system,sans-serif';ctx.fillText(`${item.k} kcal · P${item.p}g`,x,iy+14);
-    col=1-col;if(col===0)iy+=36;
-  });
-  ctx.fillStyle=fg2;ctx.font='10px -apple-system,sans-serif';ctx.fillText('NutriTrack – Ale',20,450);
-  try{
-    canvas.toBlob(async blob=>{
-      if(!blob) return;
-      const file=new File([blob],'nutritrack.png',{type:'image/png'});
-      if(navigator.share&&navigator.canShare&&navigator.canShare({files:[file]})) await navigator.share({title:'NutriTrack – '+fmtDate(today()),files:[file]});
-      else{ const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='nutritrack_'+today()+'.png';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('📷 Immagine scaricata'); }
-    },'image/png');
-  }catch{ toast('⚠ Condivisione non supportata'); }
-}
-
-// ══════════════════════════════════════════════════════════════
-//  TEMPLATES
-// ══════════════════════════════════════════════════════════════
-function openTplModal(){
-  const sel=document.getElementById('tpl-meal-sel');
-  sel.innerHTML=MEAL_KEYS.map(k=>`<option value="${k}">${MEAL_LABELS[k].replace(/^.+? /,'')}</option>`).join('');
-  renderTplList(); openOverlay('tpl-ol');
-}
-function closeTpl(){ closeOverlay('tpl-ol'); }
-function renderTplList(){
-  const el=document.getElementById('tpl-list');
-  if(!templates.length){ el.innerHTML='<div style="font-size:12px;color:var(--text3);text-align:center;padding:12px">Nessun template salvato</div>'; return; }
-  el.innerHTML=templates.map((t,i)=>`
-    <div class="tpl-row">
-      <div class="tpl-info"><div class="tpl-name">${t.name}</div><div class="tpl-meta">${t.items.length} alimenti · ${t.items.reduce((s,x)=>s+x.k,0)} kcal · ${MEAL_LABELS[t.mealKey].replace(/^.+? /,'')}</div></div>
-      <div class="tpl-btns">
-        <button class="btn-tpl-apply" onclick="applyTemplate(${i})">Applica</button>
-        <button class="btn-tpl-del"   onclick="deleteTemplate(${i})">×</button>
-      </div>
-    </div>`).join('');
-}
-function saveTemplate(){
-  const name=document.getElementById('tpl-name-input').value.trim();
-  const key=document.getElementById('tpl-meal-sel').value;
-  if(!name){ toast('⚠ Inserisci un nome'); return; }
-  if(!logged[key].length){ toast('⚠ Il pasto è vuoto'); return; }
-  templates.push({name,mealKey:key,items:JSON.parse(JSON.stringify(logged[key]))});
-  LS.set('nt_templates',templates); document.getElementById('tpl-name-input').value=''; renderTplList(); toast('✅ Template salvato');
-}
-function applyTemplate(i){
-  const tpl=templates[i];
-  tpl.items.forEach(f=>logged[tpl.mealKey].push({...f}));
-  closeTpl(); renderMeals(); updateTotals(); vib(40);
-  toast('✅ Template applicato a '+MEAL_LABELS[tpl.mealKey].replace(/^.+? /,'')); markUnsaved();
-}
-function deleteTemplate(i){ templates.splice(i,1); LS.set('nt_templates',templates); renderTplList(); toast('Template eliminato'); }
-
-// ══════════════════════════════════════════════════════════════
-//  HISTORY
-// ══════════════════════════════════════════════════════════════
-function getHistDays(){
-  const KEEP=['nt_favorites','nt_targets','nt_notif','nt_templates','nt_active_plan','nt_calendar','nt_theme','nt_phase','nt_onboarded','nt_checkins'];
-  return Object.keys(localStorage).filter(k=>k.startsWith('nt_')&&!KEEP.includes(k))
-    .map(k=>{ try{ const d=JSON.parse(localStorage.getItem(k)); return d?.date?d:null; }catch{ return null; } })
-    .filter(Boolean).sort((a,b)=>b.date.localeCompare(a.date));
-}
-function renderHistoryPage(){ renderBalance(); renderProteinTrend(); renderAdherence(); renderKcalChart(); renderAvg(); renderHistList(); }
-
-function renderBalance(){
-  const el=document.getElementById('balance-block');
-  const cut=new Date();cut.setDate(cut.getDate()-6);
-  const days=getHistDays().filter(d=>d.date>=cut.toISOString().split('T')[0]);
-  if(!days.length){ el.innerHTML=''; return; }
-  const avgK=Math.round(days.reduce((s,d)=>s+Object.values(d.logged).flat().reduce((a,i)=>a+i.k,0),0)/days.length);
-  const avgT=Math.round(days.reduce((s,d)=>s+(targets()[d.dayType]?.kcal||0),0)/days.length);
-  const delta=avgK-avgT;
-  const cls=delta>150?'delta-pos':delta<-150?'delta-neg':'delta-ok';
-  const ds=delta>0?`+${delta} kcal/gg sopra`:delta<0?`${Math.abs(delta)} kcal/gg sotto`:'In target ✓';
-  const pb=days.map(d=>({date:d.date,p:Object.values(d.logged).flat().reduce((s,i)=>s+i.p,0)})).sort((a,b)=>b.p-a.p);
-  const best=pb[0],worst=pb[pb.length-1];
-  el.innerHTML=`<div class="sec-title">Bilancio settimanale (${days.length} giorni)</div>
-  <div class="balance-card">
-    <div class="bal-row"><span class="bal-lbl">Media kcal giornaliera</span><span class="bal-val">${avgK} kcal</span></div>
-    <div class="bal-row"><span class="bal-lbl">Target medio</span><span class="bal-val">${avgT} kcal</span></div>
-    <div class="bal-row" style="margin-top:6px;padding-top:6px;border-top:.5px solid var(--border)"><span class="bal-lbl">Bilancio</span><span class="${cls}">${ds}</span></div>
-    ${best&&worst?`<div class="extreme-row">
-      <div class="extreme-card"><div class="ext-lbl">💪 Miglior prot.</div><div class="ext-val">${Math.round(best.p)}g</div><div class="ext-day">${fmtDate(best.date)}</div></div>
-      <div class="extreme-card"><div class="ext-lbl">⚠️ Peggior prot.</div><div class="ext-val">${Math.round(worst.p)}g</div><div class="ext-day">${fmtDate(worst.date)}</div></div>
-    </div>`:''}
-  </div>`;
-}
-
-function renderProteinTrend(){
-  const svg=document.getElementById('trend-svg');
-  const days=getHistDays().slice(0,14).reverse();
-  if(days.length<2){ svg.innerHTML='<text x="10" y="40" font-size="11" fill="var(--text3)">Dati insufficienti (min 2 giorni)</text>'; return; }
-  const W=360,H=80,pad=20;
-  const prots=days.map(d=>Object.values(d.logged).flat().reduce((s,i)=>s+i.p,0));
-  const avgTgt=Math.round((targets().training.p+targets().rest.p)/2);
-  const maxP=Math.max(...prots,avgTgt)*1.1;
-  const tx=i=>pad+(i/(days.length-1))*(W-pad*2);
-  const ty=v=>H-pad-(v/maxP)*(H-pad*2);
-  let path=`M ${tx(0)} ${ty(prots[0])}`,area=`M ${tx(0)} ${H-pad} L ${tx(0)} ${ty(prots[0])}`;
-  for(let i=1;i<prots.length;i++){ path+=` L ${tx(i)} ${ty(prots[i])}`; area+=` L ${tx(i)} ${ty(prots[i])}`; }
-  area+=` L ${tx(prots.length-1)} ${H-pad} Z`;
-  const tY=ty(avgTgt);
-  svg.innerHTML=`<defs><linearGradient id="pg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#185fa5" stop-opacity=".25"/><stop offset="100%" stop-color="#185fa5" stop-opacity="0"/></linearGradient></defs>
-  <path d="${area}" fill="url(#pg)"/>
-  <line x1="${pad}" y1="${tY}" x2="${W-pad}" y2="${tY}" stroke="var(--text3)" stroke-width="1" stroke-dasharray="4,3"/>
-  <path d="${path}" stroke="#185fa5" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-  ${prots.map((p,i)=>`<circle cx="${tx(i)}" cy="${ty(p)}" r="3" fill="#185fa5"><title>${fmtDate(days[i].date)}: ${Math.round(p)}g</title></circle>`).join('')}
-  <text x="${pad}" y="${H-2}" font-size="9" fill="var(--text3)">${days[0].date.slice(5)}</text>
-  <text x="${tx(days.length-1)}" y="${H-2}" font-size="9" fill="var(--text3)" text-anchor="end">${days[days.length-1].date.slice(5)}</text>
-  <text x="${W-pad}" y="${tY-4}" font-size="9" fill="var(--text3)" text-anchor="end">target ${avgTgt}g</text>`;
-}
-
-function renderAdherence(){
-  const el=document.getElementById('adh-grid');
-  const cut=new Date();cut.setDate(cut.getDate()-27);
-  const last28=getHistDays().filter(d=>d.date>=cut.toISOString().split('T')[0]);
-  function sc(arr,type){
-    if(!arr.length) return{pct:0,n:0};
-    const ok=arr.filter(d=>Object.values(d.logged).flat().reduce((s,i)=>s+i.k,0)>=(targets()[type]?.kcal||0)*.85).length;
-    return{pct:Math.round((ok/arr.length)*100),n:arr.length};
-  }
-  const tr=sc(last28.filter(d=>d.dayType==='training'),'training');
-  const re=sc(last28.filter(d=>d.dayType==='rest'),'rest');
-  function card(lbl,s,color){
-    return `<div class="adh-card"><div class="adh-score" style="color:${color}">${s.pct}%</div><div class="adh-lbl">${lbl}<br><span style="font-size:9px">${s.n} giorni</span></div><div class="adh-bar"><div class="adh-fill" style="width:${s.pct}%;background:${color}"></div></div></div>`;
-  }
-  el.innerHTML=card('Training 🏋️',tr,'#185fa5')+card('Rest 🛌',re,'#3b6d11');
-}
-
-function renderKcalChart(){
-  const wrap=document.getElementById('chart-wrap');
-  const days=getHistDays().slice(0,14).reverse();
-  if(!days.length){ wrap.innerHTML='<div style="font-size:12px;color:var(--text3);padding:8px">Dati insufficienti</div>'; return; }
-  const maxK=Math.max(...days.map(d=>Object.values(d.logged).flat().reduce((s,i)=>s+i.k,0)),2500);
-  wrap.innerHTML=days.map(data=>{
-    const tK=Object.values(data.logged).flat().reduce((s,i)=>s+i.k,0);
-    const h=Math.max(4,Math.round((tK/maxK)*60));
-    const color=data.dayType==='training'?'#185fa5':'#3b6d11';
-    const [,m,d]=data.date.split('-');
-    return `<div class="bar-col" title="${fmtDate(data.date)}: ${Math.round(tK)} kcal"><div class="bar-top">${Math.round(tK/100)/10}k</div><div style="width:100%;height:60px;display:flex;align-items:flex-end"><div class="bar-body" style="height:${h}px;background:${color};opacity:.85"></div></div><div class="bar-btm">${parseInt(d)}/${parseInt(m)}</div></div>`;
-  }).join('');
-}
-
-function renderAvg(){
-  const el=document.getElementById('avg-block');
-  const days=getHistDays().slice(0,7);
-  if(days.length<2){ el.innerHTML=''; return; }
-  const tr=days.filter(d=>d.dayType==='training'),re=days.filter(d=>d.dayType==='rest');
-  const avg=(arr,k)=>arr.length?Math.round(arr.map(d=>Object.values(d.logged).flat().reduce((s,i)=>s+i[k],0)).reduce((a,b)=>a+b,0)/arr.length):0;
-  el.innerHTML=`<div class="sec-title" style="margin-bottom:8px">Media ultimi 7 giorni loggati</div>
-  <div class="avg-grid">
-    <div class="avg-card"><div class="avg-type" style="color:var(--blue-text)">🏋️ Training (${tr.length}gg)</div><div class="avg-vals"><div><div class="avg-val">${avg(tr,'k')}</div><div class="avg-sub">kcal</div></div><div><div class="avg-val">${avg(tr,'p')}g</div><div class="avg-sub">prot</div></div><div><div class="avg-val">${avg(tr,'c')}g</div><div class="avg-sub">carbo</div></div></div></div>
-    <div class="avg-card"><div class="avg-type" style="color:var(--green-text)">🛌 Rest (${re.length}gg)</div><div class="avg-vals"><div><div class="avg-val">${avg(re,'k')}</div><div class="avg-sub">kcal</div></div><div><div class="avg-val">${avg(re,'p')}g</div><div class="avg-sub">prot</div></div><div><div class="avg-val">${avg(re,'c')}g</div><div class="avg-sub">carbo</div></div></div></div>
-  </div>`;
-}
-
-function renderHistList(){
-  const el=document.getElementById('history-list');
-  const days=getHistDays();
-  if(!days.length){ el.innerHTML='<div class="hist-empty">Nessuna giornata salvata.<br>Logga i pasti e premi "💾 Salva".</div>'; return; }
-  el.innerHTML=days.map((data,idx)=>{
-    const items=Object.values(data.logged).flat();
-    const tK=items.reduce((s,i)=>s+i.k,0),tP=items.reduce((s,i)=>s+i.p,0),tC=items.reduce((s,i)=>s+i.c,0),tF=items.reduce((s,i)=>s+i.f,0);
-    const mealsHTML=MEAL_KEYS.map(key=>{
-      const mi=data.logged[key]||[]; if(!mi.length) return '';
-      return `<div class="hist-meal-lbl">${MEAL_LABELS[key].replace(/^.+? /,'')}</div>`+mi.map(i=>`<div class="hist-food-row">${i.n} — ${i.k} kcal (P${i.p}g C${i.c}g F${i.f}g)</div>`).join('');
-    }).join('');
-    return `<div class="hist-card"><div class="hist-head" onclick="document.getElementById('hb-${idx}').classList.toggle('open')">
-      <div><div class="hist-date">${fmtDate(data.date)}</div>
-      <div class="hist-macros-row"><span class="hist-macro">${Math.round(tK)} kcal</span><span class="hist-macro">P ${Math.round(tP)}g</span><span class="hist-macro">C ${Math.round(tC)}g</span><span class="hist-macro">F ${Math.round(tF)}g</span></div></div>
-      <span class="hist-badge ${data.dayType}">${data.dayType==='training'?'Training':'Rest'}</span></div>
-      <div class="hist-body" id="hb-${idx}">${mealsHTML||'<p style="font-size:13px;color:var(--text2)">Nessun alimento</p>'}
-      <div class="hist-actions">
-        <button class="btn-hist-copy" onclick="copyDayToToday('${data.date}')">📋 Usa come base oggi</button>
-        <button class="btn-hist-del" onclick="deleteHistDay('${data.date}')">🗑 Elimina</button>
-      </div></div></div>`;
-  }).join('');
-}
-
-function deleteHistDay(d){
-  if(!confirm('Eliminare la giornata del '+fmtDate(d)+'?')) return;
-  LS.del('nt_'+d); renderHistoryPage(); toast('Giornata eliminata');
-}
-
-// ══════════════════════════════════════════════════════════════
-//  BODY COMP
-// ══════════════════════════════════════════════════════════════
-function saveCheckin(){
-  const weight=parseFloat(document.getElementById('bc-weight').value);
-  if(!weight){ toast('⚠ Inserisci almeno il peso'); return; }
-  const entry={
-    date:today(),
-    weight,
-    fat:parseFloat(document.getElementById('bc-fat').value)||null,
-    muscle:parseFloat(document.getElementById('bc-muscle').value)||null,
-    water:parseFloat(document.getElementById('bc-water').value)||null,
-    note:document.getElementById('bc-note').value.trim()||null,
-  };
-  checkins=checkins.filter(c=>c.date!==today());
-  checkins.push(entry);
-  checkins.sort((a,b)=>b.date.localeCompare(a.date));
-  LS.set('nt_checkins',checkins);
-  ['bc-weight','bc-fat','bc-muscle','bc-water','bc-note'].forEach(id=>document.getElementById(id).value='');
-  renderBodyPage(); toast('✅ Check-in salvato');
-}
-
-function renderBodyPage(){
-  // chart
-  const chartCard=document.getElementById('body-chart-card');
-  if(checkins.length>=2){
-    chartCard.style.display='block';
-    renderBodyChart();
-  } else { chartCard.style.display='none'; }
-  // list
-  const list=document.getElementById('comp-list');
-  if(!checkins.length){ list.innerHTML='<div style="text-align:center;padding:20px;font-size:13px;color:var(--text2)">Nessun check-in ancora.</div>'; return; }
-  list.innerHTML=checkins.slice(0,15).map((c,i)=>`
-    <div class="comp-card">
-      <div>
-        <div class="comp-date">${fmtDate(c.date)}</div>
-        ${c.note?`<div style="font-size:11px;color:var(--text3);margin-top:2px">${c.note}</div>`:''}
-        <div class="comp-vals">
-          <span class="comp-val">⚖️ ${c.weight}kg</span>
-          ${c.fat!=null?`<span class="comp-val">🔥 ${c.fat}%</span>`:''}
-          ${c.muscle!=null?`<span class="comp-val">💪 ${c.muscle}kg</span>`:''}
-          ${c.water!=null?`<span class="comp-val">💧 ${c.water}%</span>`:''}
-        </div>
-      </div>
-      <button class="comp-del" onclick="deleteCheckin(${i})" title="Elimina">×</button>
-    </div>`).join('');
-}
-
-function deleteCheckin(i){ checkins.splice(i,1); LS.set('nt_checkins',checkins); renderBodyPage(); toast('Check-in eliminato'); }
-
-function renderBodyChart(){
-  const svg=document.getElementById('body-svg');
-  const data=[...checkins].reverse().slice(0,12);
-  if(data.length<2){ svg.innerHTML=''; return; }
-  const W=340,H=100,pad=24;
-  const weights=data.map(c=>c.weight);
-  const muscles=data.map(c=>c.muscle).filter(Boolean);
-  const allV=[...weights,...muscles].filter(Boolean);
-  const minV=Math.min(...allV)*.97,maxV=Math.max(...allV)*1.03;
-  const tx=i=>pad+(i/(data.length-1))*(W-pad*2);
-  const ty=v=>H-pad-((v-minV)/(maxV-minV))*(H-pad*2);
-  let wp=`M ${tx(0)} ${ty(weights[0])}`;
-  for(let i=1;i<weights.length;i++) wp+=` L ${tx(i)} ${ty(weights[i])}`;
-  let muscPts=data.map((c,i)=>c.muscle?[tx(i),ty(c.muscle)]:null).filter(Boolean);
-  let mp=muscPts.map((p,i)=>(i===0?'M':'L')+p[0]+','+p[1]).join(' ');
-  svg.innerHTML=`
-    <path d="${wp}" stroke="#185fa5" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-    ${weights.map((w,i)=>`<circle cx="${tx(i)}" cy="${ty(w)}" r="3" fill="#185fa5"><title>${fmtDate(data[i].date)}: ${w}kg</title></circle>`).join('')}
-    ${mp?`<path d="${mp}" stroke="#3b6d11" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="4,2"/>`:''}
-    ${muscPts.map(p=>`<circle cx="${p[0]}" cy="${p[1]}" r="2.5" fill="#3b6d11"/>`).join('')}
-    <text x="${pad}" y="${H-4}" font-size="9" fill="var(--text3)">${data[0].date.slice(5)}</text>
-    <text x="${tx(data.length-1)}" y="${H-4}" font-size="9" fill="var(--text3)" text-anchor="end">${data[data.length-1].date.slice(5)}</text>`;
-}
-
-// ══════════════════════════════════════════════════════════════
-//  PLANS
-// ══════════════════════════════════════════════════════════════
-function renderPlansPage(){
-  const el=document.getElementById('plans-list');
-  el.innerHTML=ALL_PLANS.map(plan=>`
-    <div class="plan-card${plan.id===activePlanId?' active-plan':''}" onclick="selectPlan('${plan.id}')">
-      <div class="plan-card-top">
-        <span class="plan-name">${plan.name}</span>
-        ${plan.id===activePlanId?'<span class="plan-active-badge">✓ Attivo</span>':''}
-      </div>
-      <div class="plan-desc">${plan.desc}</div>
-      <div class="plan-targets">
-        <span class="plan-tgt">Training: ${plan.targets.training.kcal} kcal · P${plan.targets.training.p}g</span>
-        <span class="plan-tgt">Rest: ${plan.targets.rest.kcal} kcal · P${plan.targets.rest.p}g</span>
-      </div>
-    </div>`).join('');
-}
-function selectPlan(id){
-  activePlanId=id; LS.set('nt_active_plan',id);
-  renderPlansPage(); renderHero(); updateTotals(); renderMeals();
-  toast('✅ Piano attivato: '+ALL_PLANS.find(p=>p.id===id).name);
-}
-
-// ══════════════════════════════════════════════════════════════
-//  SETTINGS
-// ══════════════════════════════════════════════════════════════
-function renderSettingsPage(){
-  renderCalGrid(); renderPhaseRow(); renderThemeGrid(); renderFavsSettings();
-  const t=targets();
-  document.getElementById('t-kcal').value=t.training.kcal;
-  document.getElementById('t-prot').value=t.training.p;
-  document.getElementById('t-carb').value=t.training.c;
-  document.getElementById('t-fat').value=t.training.f;
-  document.getElementById('r-kcal').value=t.rest.kcal;
-  document.getElementById('r-prot').value=t.rest.p;
-  document.getElementById('r-carb').value=t.rest.c;
-  document.getElementById('r-fat').value=t.rest.f;
-  const notif=LS.get('nt_notif',{enabled:false,time:'20:00'});
-  document.getElementById('notif-toggle').checked=notif.enabled;
-  document.getElementById('notif-time').value=notif.time||'20:00';
-  updateNotifStatus();
-}
-
-function renderCalGrid(){
-  const el=document.getElementById('cal-grid');
-  el.innerHTML=DAYS_S.map((d,i)=>`
-    <button class="cal-btn ${calendar[i]}" onclick="toggleCalDay(${i})">
-      ${d}<span>${calendar[i]==='training'?'🏋️':'🛌'}</span>
-    </button>`).join('');
-}
-function toggleCalDay(dow){
-  calendar[dow]=calendar[dow]==='training'?'rest':'training';
-  LS.set('nt_calendar',calendar); renderCalGrid();
-  const calType=calendar[todayDow()];
-  document.getElementById('hero-hint').textContent=(calType&&calType!==dayType)?`📅 Il tuo calendario suggerisce ${calType==='training'?'Training':'Rest'}`:'';
-}
-
-function renderPhaseRow(){
-  const el=document.getElementById('phase-row');
-  el.innerHTML=PHASES.map(p=>`<button class="phase-chip${p.id===activePhase?' active':''}" onclick="setPhase('${p.id}')">${p.label}</button>`).join('');
-}
-function setPhase(id){ activePhase=id; LS.set('nt_phase',id); renderPhaseRow(); renderHero(); }
-
-function renderThemeGrid(){
-  const el=document.getElementById('theme-grid');
-  el.innerHTML=THEMES.map(th=>`
-    <div class="theme-sw${th.id===activeTheme?' active':''}" onclick="applyTheme('${th.id}')">
-      <div class="sw-preview"><div class="sw-half" style="background:${th.tr[1]}"></div><div class="sw-half" style="background:${th.re[1]}"></div></div>
-      <div class="sw-label">${th.name}</div>
-    </div>`).join('');
-}
-
-function renderFavsSettings(){
-  const el=document.getElementById('favs-container');
-  if(!favorites.length){ el.innerHTML='<div style="font-size:12px;color:var(--text3)">Nessun preferito. Tieni premuto un chip nel log per aggiungerlo.</div>'; return; }
-  el.innerHTML=favorites.map(f=>`<span class="fav-item">⭐ ${f.n.split(' ').slice(0,3).join(' ')}<button class="fav-del" onclick="removeFav('${f.n.replace(/'/g,"\\'")}')">×</button></span>`).join('');
-}
-
-function saveTargets(){
-  customTargets={
-    training:{kcal:parseFloat(document.getElementById('t-kcal').value)||2450,p:parseFloat(document.getElementById('t-prot').value)||175,c:parseFloat(document.getElementById('t-carb').value)||260,f:parseFloat(document.getElementById('t-fat').value)||65},
-    rest:{kcal:parseFloat(document.getElementById('r-kcal').value)||2050,p:parseFloat(document.getElementById('r-prot').value)||175,c:parseFloat(document.getElementById('r-carb').value)||190,f:parseFloat(document.getElementById('r-fat').value)||65}
-  };
-  LS.set('nt_targets',customTargets); renderHero(); updateTotals(); toast('✅ Target salvati');
-}
-
-// ── NOTIFICATIONS ─────────────────────────────────────────────
-function saveNotifSettings(){ LS.set('nt_notif',{enabled:document.getElementById('notif-toggle').checked,time:document.getElementById('notif-time').value}); scheduleNotif(); }
-function toggleNotif(){
-  const en=document.getElementById('notif-toggle').checked;
-  if(en&&'Notification'in window&&Notification.permission==='default'){
-    Notification.requestPermission().then(p=>{ if(p!=='granted'){ document.getElementById('notif-toggle').checked=false; toast('⚠ Permesso negato'); } else saveNotifSettings(); });
-  } else saveNotifSettings();
-  updateNotifStatus();
-}
-function updateNotifStatus(){
-  const el=document.getElementById('notif-status'); if(!el) return;
-  if(!('Notification'in window)){ el.textContent='⚠ Notifiche non supportate'; return; }
-  if(Notification.permission==='denied'){ el.textContent='⚠ Notifiche bloccate'; return; }
-  const n=LS.get('nt_notif',{enabled:false,time:'20:00'});
-  el.textContent=n.enabled?`✅ Reminder attivo alle ${n.time}`:'Reminder disattivato';
-}
-function scheduleNotif(){
-  const n=LS.get('nt_notif',{enabled:false,time:'20:00'});
-  if(!n.enabled||Notification.permission!=='granted') return;
-  const[h,m]=n.time.split(':').map(Number);
-  const now=new Date(),fire=new Date();fire.setHours(h,m,0,0);
-  if(fire<=now) fire.setDate(fire.getDate()+1);
-  clearTimeout(window._nt);
-  window._nt=setTimeout(()=>{ if(!LS.get('nt_'+today(),null)) new Notification('🥗 NutriTrack',{body:'Non hai ancora salvato i pasti di oggi!',icon:'icon-192.png'}); scheduleNotif(); },fire-now);
-}
-
-// ══════════════════════════════════════════════════════════════
-//  EXPORT
-// ══════════════════════════════════════════════════════════════
-function setRange(type,days){
-  exportRanges[type]=days;
-  const labels={1:'Oggi',7:'7 giorni',30:'30 giorni'};
-  document.querySelectorAll('#range-'+type+' .range-chip').forEach(btn=>btn.classList.toggle('active',btn.textContent===labels[days]));
-}
-function getDaysData(n){
-  const cut=new Date();cut.setDate(cut.getDate()-(n-1));
-  return getHistDays().filter(d=>d.date>=cut.toISOString().split('T')[0]);
-}
-function exportJSON(){
-  const days=getDaysData(exportRanges.json);
-  if(!days.length){ toast('⚠ Nessun dato nel periodo'); return; }
-  const out={exportedAt:new Date().toISOString(),source:'NutriTrack – Ale',schema:'com.google.nutrition',
-    entries:days.map(data=>{
-      const items=Object.values(data.logged).flat();
-      const tK=items.reduce((s,i)=>s+i.k,0),tP=items.reduce((s,i)=>s+i.p,0),tC=items.reduce((s,i)=>s+i.c,0),tF=items.reduce((s,i)=>s+i.f,0);
-      return{date:data.date,dayType:data.dayType,targets:targets()[data.dayType],
-        summary:{calories:Math.round(tK),protein_g:Math.round(tP),carbs_g:Math.round(tC),fat_g:Math.round(tF)},
-        googleFitCompatible:{dataType:'com.google.nutrition',startTimeMillis:new Date(data.date+'T00:00:00').getTime(),endTimeMillis:new Date(data.date+'T23:59:59').getTime(),dataFields:{calories:Math.round(tK),protein:Math.round(tP),carbs:Math.round(tC),fat:Math.round(tF)}},
-        meals:MEAL_KEYS.map(k=>({mealName:MEAL_LABELS[k],items:(data.logged[k]||[]).map(i=>({name:i.n,calories:i.k,protein_g:i.p,carbs_g:i.c,fat_g:i.f}))})).filter(m=>m.items.length>0)};
-    })};
-  dlFile('nutritrack_'+today()+'.json',JSON.stringify(out,null,2),'application/json'); toast('✅ JSON scaricato');
-}
-function exportCSV(){
-  const days=getDaysData(exportRanges.csv);
-  if(!days.length){ toast('⚠ Nessun dato nel periodo'); return; }
-  let csv='Data,Tipo giorno,Pasto,Alimento,kcal,Proteine_g,Carboidrati_g,Grassi_g\n';
-  days.forEach(data=>{
-    MEAL_KEYS.forEach(key=>(data.logged[key]||[]).forEach(i=>{ csv+=`${data.date},${data.dayType},${MEAL_LABELS[key].replace(/^.+? /,'')},"${i.n}",${i.k},${i.p},${i.c},${i.f}\n`; }));
-    const items=Object.values(data.logged).flat();
-    csv+=`${data.date},${data.dayType},TOTALE,TOTALE,${Math.round(items.reduce((s,i)=>s+i.k,0))},${Math.round(items.reduce((s,i)=>s+i.p,0))},${Math.round(items.reduce((s,i)=>s+i.c,0))},${Math.round(items.reduce((s,i)=>s+i.f,0))}\n`;
-  });
-  dlFile('nutritrack_'+today()+'.csv',csv,'text/csv;charset=utf-8;'); toast('✅ CSV scaricato');
-}
-function exportBackup(){
-  const all={};Object.keys(localStorage).filter(k=>k.startsWith('nt_')).forEach(k=>{all[k]=localStorage.getItem(k);});
-  dlFile('nutritrack_backup_'+today()+'.json',JSON.stringify(all,null,2),'application/json'); toast('✅ Backup esportato');
-}
-function importBackup(e){
-  const file=e.target.files[0]; if(!file) return;
-  const r=new FileReader();
-  r.onload=ev=>{ try{ const all=JSON.parse(ev.target.result);let n=0;Object.entries(all).forEach(([k,v])=>{ if(k.startsWith('nt_')){ localStorage.setItem(k,v); n++; } }); toast('✅ '+n+' record importati'); loadToday(); renderMeals(); updateTotals(); }catch{ toast('⚠ File non valido'); } };
-  r.readAsText(file); e.target.value='';
-}
-function dlFile(name,content,mime){
-  const url=URL.createObjectURL(new Blob([content],{type:mime}));
-  const a=document.createElement('a');a.href=url;a.download=name;a.click();
-  setTimeout(()=>URL.revokeObjectURL(url),1000);
-}
-
-// ══════════════════════════════════════════════════════════════
-//  OVERLAY HELPERS
-// ══════════════════════════════════════════════════════════════
-function openOverlay(id){ const el=document.getElementById(id);if(el) el.classList.add('open'); }
-function closeOverlay(id){ const el=document.getElementById(id);if(el) el.classList.remove('open'); }
-
-// ══════════════════════════════════════════════════════════════
-//  ONBOARDING
-// ══════════════════════════════════════════════════════════════
-const OB_TOTAL=4;
-function obNext(){
-  _obStep++;
-  if(_obStep>=OB_TOTAL){ closeOnboard(); return; }
-  for(let i=0;i<OB_TOTAL;i++){
-    document.getElementById('ob-'+i).classList.toggle('active',i===_obStep);
-    document.getElementById('od-'+i).classList.toggle('active',i===_obStep);
-  }
-  if(_obStep===OB_TOTAL-1) document.getElementById('ob-next-btn').textContent='Inizia 🚀';
-}
-function closeOnboard(){ closeOverlay('onboard-ol'); LS.set('nt_onboarded','1'); }
-
-// ══════════════════════════════════════════════════════════════
-//  DAY PICKER
-// ══════════════════════════════════════════════════════════════
-function showDayPickerIfNeeded(){
-  if(LS.get('nt_'+today(),null)) return; // already saved today
-  const calType=calendar[todayDow()];
-  const sub=document.getElementById('dp-sub');
-  if(calType) sub.textContent=`Il calendario suggerisce: ${calType==='training'?'Training 🏋️':'Rest 🛌'}`;
-  else sub.textContent='Scegli il tipo di giorno per i target corretti';
-  openOverlay('day-picker-ol');
-}
-
-// ══════════════════════════════════════════════════════════════
-//  PWA
-// ══════════════════════════════════════════════════════════════
-window.addEventListener('beforeinstallprompt',e=>{ e.preventDefault(); _deferredInstall=e; document.getElementById('install-btn').style.display='flex'; });
-window.addEventListener('appinstalled',()=>{ document.getElementById('install-btn').style.display='none'; toast('✅ App aggiunta alla home!'); });
-function installApp(){ if(_deferredInstall){ _deferredInstall.prompt(); _deferredInstall=null; } }
-if('serviceWorker'in navigator) window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
-
-// ══════════════════════════════════════════════════════════════
-//  INIT
-// ══════════════════════════════════════════════════════════════
-(function(){
-  // load saved day
-  const saved=LS.get('nt_'+today(),null);
-  if(saved){ logged=saved.logged||logged; dayType=saved.dayType||'training'; mealNotes=saved.notes||mealNotes; }
-  else { const calType=calendar[todayDow()]; if(calType) dayType=calType; }
-  // apply theme + render
-  applyTheme(activeTheme,false);
-  renderHero();
-  renderMeals();
-  updateTotals();
-  pruneOld();
-  scheduleNotif();
-  // onboarding or day picker
-  if(!LS.get('nt_onboarded',null)) openOverlay('onboard-ol');
-  else setTimeout(showDayPickerIfNeeded,500);
-})();
-</script>
-</body>
-</html>
+// ── COPY DAY ─────────────────────────────────

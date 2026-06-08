@@ -819,6 +819,7 @@ a{color:var(--blue-tx)}
       <input type="file" id="restore-in" accept=".json" style="display:none" onchange="importBackup(event)">
       <input type="file" id="import-profile-in" accept=".json" style="display:none" onchange="importProfile(event)">
     </div>
+    <div style="text-align:center;padding:18px 16px 8px;font-size:11px;color:var(--tx3)">NutriTrack v<span id="ver-lbl"></span> · Ale · GitHub Pages</div>
   </div>
 </div>
 </div><!-- /app -->
@@ -1004,20 +1005,38 @@ a{color:var(--blue-tx)}
     <div style="font-size:10px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px">Ingredienti</div>
     <div id="rb-ing-list" style="margin-bottom:9px"></div>
     <div style="background:var(--sf2);border-radius:var(--r8);padding:10px 11px;margin-bottom:9px">
-      <div style="font-size:10px;font-weight:700;color:var(--tx3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em">Aggiungi ingrediente</div>
-      <input type="text" class="sh-input" id="rb-ing-name-in" placeholder="Nome ingrediente" style="margin-bottom:5px">
-      <div style="display:flex;gap:5px;margin-bottom:5px">
-        <input type="number" class="sh-input" id="rb-ing-g" placeholder="Grammi" inputmode="decimal" style="margin-bottom:0;flex:1">
-        <input type="number" class="sh-input" id="rb-ing-kcal" placeholder="kcal" inputmode="decimal" style="margin-bottom:0;flex:1">
+      <div style="font-size:10px;font-weight:700;color:var(--tx3);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Aggiungi ingrediente</div>
+      <div style="display:flex;gap:5px;margin-bottom:7px;flex-wrap:wrap">
+        <button class="ch-blue" style="flex:1" onclick="openRBSearch()">🔍 Cerca DB</button>
+        <button class="ch-green" style="flex:1" onclick="openRBBarcode()">📷 Barcode</button>
+        <button class="ch-ai" style="flex:1" onclick="openRBManual()">✏️ Manuale</button>
       </div>
-      <div style="display:flex;gap:5px;margin-bottom:7px">
-        <input type="number" class="sh-input" id="rb-ing-p" placeholder="Prot g" inputmode="decimal" style="margin-bottom:0;flex:1">
-        <input type="number" class="sh-input" id="rb-ing-c" placeholder="Carbo g" inputmode="decimal" style="margin-bottom:0;flex:1">
-        <input type="number" class="sh-input" id="rb-ing-f" placeholder="Grassi g" inputmode="decimal" style="margin-bottom:0;flex:1">
+      <div id="rb-ing-form" style="display:none">
+        <input type="text" class="sh-input" id="rb-ing-name-in" placeholder="Nome ingrediente" style="margin-bottom:5px">
+        <div style="display:flex;gap:5px;margin-bottom:5px">
+          <input type="number" class="sh-input" id="rb-ing-g" placeholder="Grammi" inputmode="decimal" style="margin-bottom:0;flex:1">
+          <input type="number" class="sh-input" id="rb-ing-kcal" placeholder="kcal" inputmode="decimal" style="margin-bottom:0;flex:1">
+        </div>
+        <div style="display:flex;gap:5px;margin-bottom:7px">
+          <input type="number" class="sh-input" id="rb-ing-p" placeholder="Prot g" inputmode="decimal" style="margin-bottom:0;flex:1">
+          <input type="number" class="sh-input" id="rb-ing-c" placeholder="Carbo g" inputmode="decimal" style="margin-bottom:0;flex:1">
+          <input type="number" class="sh-input" id="rb-ing-f" placeholder="Grassi g" inputmode="decimal" style="margin-bottom:0;flex:1">
+        </div>
+        <div style="display:flex;gap:5px">
+          <button class="ch-ai" style="flex:1" onclick="estimateIngredient()">✨ Stima AI</button>
+          <button class="btn-yes" style="flex:1;padding:9px;border-radius:var(--r8)" onclick="addRBIngredient()">＋ Aggiungi</button>
+        </div>
       </div>
-      <div style="display:flex;gap:5px">
-        <button class="ch-ai" style="flex:1" onclick="estimateIngredient()">✨ Stima AI</button>
-        <button class="btn-yes" style="flex:1;padding:9px;border-radius:var(--r8)" onclick="addRBIngredient()">＋ Aggiungi</button>
+      <div id="rb-search-wrap" style="display:none">
+        <div class="search-row">
+          <input type="text" class="sh-input" id="rb-search-q" placeholder="Cerca alimento…" style="margin-bottom:0" autocomplete="off" oninput="onRBSearchInput(this.value)" onkeydown="if(event.key==='Enter')doRBSearch()">
+          <button class="btn-go" onclick="doRBSearch()">Cerca</button>
+        </div>
+        <div id="rb-search-results"><div class="s-status" style="padding:9px">Cerca su Open Food Facts</div></div>
+      </div>
+      <div id="rb-fav-wrap" style="display:none">
+        <div class="s-sec-lbl" style="padding:3px 0 5px">⭐ Preferiti</div>
+        <div id="rb-fav-list"></div>
       </div>
     </div>
     <div class="rb-totals" id="rb-totals">
@@ -1062,12 +1081,65 @@ a{color:var(--blue-tx)}
   </div>
 </div>
 
+<!-- OVERLAY: EDIT HIST DAY -->
+<div class="c-overlay" id="ol-edit-hist">
+  <div class="c-sheet">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:11px">
+      <h3 style="margin-bottom:0">✏️ Modifica giorno</h3>
+      <span id="edit-hist-date-lbl" style="font-size:12px;color:var(--tx2)"></span>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:11px">
+      <button class="htog" id="eht-tr" onclick="setEditHistType('training')" style="flex:1;border-radius:var(--r8);background:var(--blue-bg);color:var(--blue-tx);padding:8px">🏋️ Training</button>
+      <button class="htog" id="eht-re" onclick="setEditHistType('rest')" style="flex:1;border-radius:var(--r8);background:var(--sf2);color:var(--tx2);padding:8px">🛌 Rest</button>
+    </div>
+    <div id="edit-hist-meals" style="max-height:50dvh;overflow-y:auto"></div>
+    <div style="margin-top:11px;border-top:.5px solid var(--br);padding-top:11px">
+      <button class="ch-blue" style="width:100%;padding:9px;margin-bottom:7px" onclick="addItemToEditHist()">＋ Aggiungi alimento</button>
+    </div>
+    <div class="sh-btns">
+      <button class="btn-no" onclick="closeOl('ol-edit-hist')">Annulla</button>
+      <button class="btn-yes" onclick="saveEditHist()">💾 Salva modifiche</button>
+    </div>
+  </div>
+</div>
+
+<!-- OVERLAY: EDIT PLAN -->
+<div class="c-overlay" id="ol-edit-plan">
+  <div class="c-sheet">
+    <h3>✏️ Modifica target piano</h3>
+    <div style="font-size:13px;font-weight:700;color:var(--tx2);margin-bottom:11px" id="edit-plan-name-lbl"></div>
+    <div class="s-lbl">Giorno Training</div>
+    <div class="s-grid2">
+      <div class="macro-input-group"><div class="s-lbl">Calorie (kcal)</div><input class="s-input" type="number" id="ep-t-kcal" inputmode="decimal"></div>
+      <div class="macro-input-group"><div class="s-lbl">Proteine (g)</div><input class="s-input" type="number" id="ep-t-p" inputmode="decimal"></div>
+    </div>
+    <div class="s-grid2">
+      <div class="macro-input-group"><div class="s-lbl">Carboidrati (g)</div><input class="s-input" type="number" id="ep-t-c" inputmode="decimal"></div>
+      <div class="macro-input-group"><div class="s-lbl">Grassi (g)</div><input class="s-input" type="number" id="ep-t-f" inputmode="decimal"></div>
+    </div>
+    <div class="s-lbl" style="margin-top:4px">Giorno Rest</div>
+    <div class="s-grid2">
+      <div class="macro-input-group"><div class="s-lbl">Calorie (kcal)</div><input class="s-input" type="number" id="ep-r-kcal" inputmode="decimal"></div>
+      <div class="macro-input-group"><div class="s-lbl">Proteine (g)</div><input class="s-input" type="number" id="ep-r-p" inputmode="decimal"></div>
+    </div>
+    <div class="s-grid2">
+      <div class="macro-input-group"><div class="s-lbl">Carboidrati (g)</div><input class="s-input" type="number" id="ep-r-c" inputmode="decimal"></div>
+      <div class="macro-input-group"><div class="s-lbl">Grassi (g)</div><input class="s-input" type="number" id="ep-r-f" inputmode="decimal"></div>
+    </div>
+    <div class="sh-btns">
+      <button class="btn-no" onclick="closeOl('ol-edit-plan')">Annulla</button>
+      <button class="btn-yes" onclick="saveEditPlan()">💾 Salva</button>
+    </div>
+  </div>
+</div>
+
 <button id="install-btn" onclick="installApp()">📲 Aggiungi alla home</button>
 <div class="toast" id="toast"></div>
 
 
 <script>
 'use strict';
+const APP_VERSION = '2.2.0'; // sessione.feature.patch
 // ═══ CONSTANTS ═══════════════════════════════════════════
 const DAYS_IT=['Domenica','Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato'];
 const DAYS_S=['Dom','Lun','Mar','Mer','Gio','Ven','Sab'];
@@ -1884,7 +1956,50 @@ function renderPlansPage(){
         <span class="plan-tgt">Training: ${plan.targets.training.kcal} kcal · P${plan.targets.training.p}g</span>
         <span class="plan-tgt">Rest: ${plan.targets.rest.kcal} kcal · P${plan.targets.rest.p}g</span>
       </div>
+      <div style="display:flex;gap:6px;margin-top:9px">
+        ${plan.id===activePlanId?'<span style="font-size:11px;color:var(--green-tx);padding:4px 0">✓ Piano attivo</span>':''}
+        <button class="ch-blue" style="margin-left:auto" onclick="event.stopPropagation();editPlan('${plan.id}')">✏️ Modifica target</button>
+      </div>
     </div>`).join('');
+}
+// ── UX-10: Modifica piani alimentari ─────────────────────
+let _editPlanId=null;
+function editPlan(id){
+  const plan=ALL_PLANS.find(p=>p.id===id);if(!plan)return;
+  _editPlanId=id;
+  $('edit-plan-name-lbl').textContent=plan.name;
+  $('ep-t-kcal').value=plan.targets.training.kcal;
+  $('ep-t-p').value=plan.targets.training.p;
+  $('ep-t-c').value=plan.targets.training.c;
+  $('ep-t-f').value=plan.targets.training.f;
+  $('ep-r-kcal').value=plan.targets.rest.kcal;
+  $('ep-r-p').value=plan.targets.rest.p;
+  $('ep-r-c').value=plan.targets.rest.c;
+  $('ep-r-f').value=plan.targets.rest.f;
+  openOl('ol-edit-plan');
+}
+function saveEditPlan(){
+  const plan=ALL_PLANS.find(p=>p.id===_editPlanId);if(!plan)return;
+  plan.targets.training={
+    kcal:parseFloat($('ep-t-kcal').value)||plan.targets.training.kcal,
+    p:parseFloat($('ep-t-p').value)||plan.targets.training.p,
+    c:parseFloat($('ep-t-c').value)||plan.targets.training.c,
+    f:parseFloat($('ep-t-f').value)||plan.targets.training.f
+  };
+  plan.targets.rest={
+    kcal:parseFloat($('ep-r-kcal').value)||plan.targets.rest.kcal,
+    p:parseFloat($('ep-r-p').value)||plan.targets.rest.p,
+    c:parseFloat($('ep-r-c').value)||plan.targets.rest.c,
+    f:parseFloat($('ep-r-f').value)||plan.targets.rest.f
+  };
+  // Persist custom plans to localStorage
+  const customPlans=LS.get('nt_custom_plans',[]);
+  const ci=customPlans.findIndex(p=>p.id===_editPlanId);
+  if(ci>=0)customPlans[ci]=plan;else customPlans.push(plan);
+  LS.set('nt_custom_plans',customPlans);
+  closeOl('ol-edit-plan');
+  renderPlansPage();renderHero();updateTotals();
+  toast('✅ Target piano aggiornati');vib([30,20,30]);
 }
 function selectPlan(id){
   activePlanId=id;LS.set('nt_active_plan',id);
@@ -1968,9 +2083,71 @@ function renderHistList(){
     const mealsHTML=MEAL_KEYS.map(key=>{const mi=data.logged[key]||[];if(!mi.length)return'';return`<div class="hist-mlbl">${MEAL_LABELS[key].replace(/^.+? /,'')}</div>`+mi.map(i=>`<div class="hist-frow">${esc(i.n)} — ${i.k} kcal (P${i.p}g C${i.c}g F${i.f}g)</div>`).join('');}).join('');
     return`<div class="hist-card"><div class="hist-head" onclick="document.getElementById('hb${idx}').classList.toggle('open')"><div><div class="hist-date">${fmtDate(data.date)}</div><div class="hist-macros"><span class="hist-mac">${Math.round(t.k)} kcal</span><span class="hist-mac">P ${Math.round(t.p)}g</span><span class="hist-mac">C ${Math.round(t.c)}g</span><span class="hist-mac">F ${Math.round(t.f)}g</span></div></div><span class="hist-badge ${data.dayType}">${data.dayType==='training'?'Training':'Rest'}</span></div>
     <div class="hist-body" id="hb${idx}">${mealsHTML||'<p style="font-size:13px;color:var(--tx2)">Nessun alimento</p>'}
-      <div class="hist-acts"><button class="btn-hcopy" onclick="copyDayToToday('${data.date}')">📋 Usa come base</button><button class="btn-hdel" onclick="deleteHistDay('${data.date}')">🗑 Elimina</button></div>
+      <div class="hist-acts"><button class="btn-hcopy" onclick="copyDayToToday('${data.date}')">📋 Usa come base</button><button class="btn-hcopy" style="background:var(--purple-bg);color:var(--purple-tx);border-color:var(--purple)" onclick="editHistDay('${data.date}')">✏️ Modifica</button><button class="btn-hdel" onclick="deleteHistDay('${data.date}')">🗑 Elimina</button></div>
     </div></div>`;
   }).join('');
+}
+// ── UX-9: Modifica giorni precedenti ─────────────────────
+let _editHistDate=null,_editHistData=null;
+function editHistDay(date){
+  const saved=LS.get('nt_'+date,null);
+  if(!saved){toast('⚠ Giornata non trovata');return;}
+  _editHistDate=date;
+  _editHistData=JSON.parse(JSON.stringify(saved));
+  $('edit-hist-date-lbl').textContent=fmtDate(date);
+  setEditHistType(_editHistData.dayType||'training');
+  renderEditHistMeals();
+  openOl('ol-edit-hist');
+}
+function setEditHistType(type){
+  _editHistData.dayType=type;
+  $('eht-tr').style.background=type==='training'?'var(--blue-bg)':'var(--sf2)';
+  $('eht-tr').style.color=type==='training'?'var(--blue-tx)':'var(--tx2)';
+  $('eht-re').style.background=type==='rest'?'var(--green-bg)':'var(--sf2)';
+  $('eht-re').style.color=type==='rest'?'var(--green-tx)':'var(--tx2)';
+}
+function renderEditHistMeals(){
+  const el=$('edit-hist-meals');if(!el)return;
+  el.innerHTML=MEAL_KEYS.map(key=>{
+    const items=(_editHistData.logged[key]||[]);
+    const itemsHTML=items.map((item,idx)=>`
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:.5px solid var(--br)">
+        <div style="flex:1"><div style="font-size:12px;font-weight:600">${esc(item.n)}</div>
+        <div style="font-size:10px;color:var(--tx2)">${item.k} kcal · P${item.p}g · C${item.c}g · F${item.f}g</div></div>
+        <button onclick="removeEditHistItem('${key}',${idx})" style="color:var(--tx3);font-size:17px;padding:2px 5px">×</button>
+      </div>`).join('');
+    return`<div style="margin-bottom:9px">
+      <div style="font-size:10px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">${MEAL_LABELS[key].replace(/^.+? /,'')}</div>
+      ${itemsHTML||'<div style="font-size:11px;color:var(--tx3);padding:3px 0">—</div>'}
+    </div>`;
+  }).join('');
+}
+function removeEditHistItem(key,idx){
+  _editHistData.logged[key].splice(idx,1);
+  renderEditHistMeals();
+}
+function addItemToEditHist(){
+  // Reuse manual entry: prompt for name + macros
+  const name=prompt('Nome alimento:');if(!name)return;
+  const kcal=parseFloat(prompt('kcal:'))||0;
+  const prot=parseFloat(prompt('Proteine g:'))||0;
+  const carb=parseFloat(prompt('Carbo g:'))||0;
+  const fat =parseFloat(prompt('Grassi g:'))||0;
+  const key =prompt('Pasto (colazione/spuntino_pre/pranzo/spuntino_post/cena):')||'pranzo';
+  if(!MEAL_KEYS.includes(key)){toast('⚠ Pasto non valido');return;}
+  if(!_editHistData.logged[key])_editHistData.logged[key]=[];
+  _editHistData.logged[key].push({n:name,k:kcal,p:prot,c:carb,f:fat});
+  renderEditHistMeals();
+}
+function saveEditHist(){
+  if(!_editHistDate||!_editHistData)return;
+  _editHistData.savedAt=new Date().toISOString();
+  _editHistData.editedAt=new Date().toISOString();
+  LS.set('nt_'+_editHistDate,_editHistData);
+  closeOl('ol-edit-hist');
+  renderHistoryPage();
+  toast('✅ Giornata del '+fmtDate(_editHistDate)+' aggiornata');
+  vib([30,20,30]);
 }
 function deleteHistDay(d){if(!confirm('Eliminare la giornata del '+fmtDate(d)+'?'))return;LS.del('nt_'+d);renderHistoryPage();toast('Giornata eliminata');}
 // ═══ ROLLING DASHBOARD ════════════════════════════════════
@@ -2552,11 +2729,90 @@ function confirmImportPlan(){
 function cancelImportPlan(){_importedPlan=null;$('import-plan-preview').style.display='none';$('import-plan-file').value='';}
 function loadCustomPlans(){const custom=LS.get('nt_custom_plans',[]);custom.forEach(cp=>{if(!ALL_PLANS.find(p=>p.id===cp.id))ALL_PLANS.push(cp);});}
 // ═══ RECIPES ══════════════════════════════════════════════
+// ── UX-12: Ricerca ingredienti builder ───────────────────
+let _rbSearchProds=[];
+function openRBManual(){
+  $('rb-ing-form').style.display='block';
+  $('rb-search-wrap').style.display='none';
+  $('rb-fav-wrap').style.display='none';
+  $('rb-ing-name-in').focus();
+}
+function openRBSearch(){
+  $('rb-ing-form').style.display='none';
+  $('rb-search-wrap').style.display='block';
+  $('rb-fav-wrap').style.display='none';
+  $('rb-search-q').focus();
+}
+function openRBBarcode(){
+  // Reuse barcode: switch to barcode tab and set context to recipe builder
+  closeOl('ol-recipe-builder');
+  curMealKey='_rb';
+  openOl('ol-addfood');
+  switchTab('barcode');
+}
+function onRBSearchInput(v){
+  if(!v.trim()){$('rb-search-results').innerHTML='<div class="s-status" style="padding:9px">Cerca su Open Food Facts</div>';return;}
+  clearTimeout(window._rbSearchTimer);
+  window._rbSearchTimer=setTimeout(doRBSearch,350);
+}
+async function doRBSearch(){
+  const q=$('rb-search-q').value.trim();if(!q)return;
+  if(!navigator.onLine){
+    const hits=Object.values(foodCache).filter(p=>(p.product_name||p.n||'').toLowerCase().includes(q.toLowerCase())).slice(0,8);
+    $('rb-search-results').innerHTML=hits.length
+      ?hits.map((p,i)=>`<div class="sri" onclick="selectRBProd(${i},'offline')"><div class="sri-name">${esc(p.product_name||p.n)}</div><div class="sri-macros">${p.k||0} kcal · P${p.p||0}g · C${p.c||0}g · F${p.f||0}g</div></div>`).join('')
+      :'<div class="s-status" style="padding:9px">📵 Offline — nessun risultato</div>';
+    window._rbOfflineHits=hits;return;
+  }
+  $('rb-search-results').innerHTML='<div class="s-status" style="padding:9px">🔍 Ricerca…</div>';
+  try{
+    const url=`https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=12&lc=it&cc=it&fields=product_name,product_name_it,brands,nutriments,serving_size`;
+    const data=await(await fetch(url)).json();
+    _rbSearchProds=(data.products||[]).filter(p=>p.product_name&&p.nutriments?.['energy-kcal_100g']!=null);
+    if(!_rbSearchProds.length){$('rb-search-results').innerHTML='<div class="s-status" style="padding:9px">Nessun risultato</div>';return;}
+    $('rb-search-results').innerHTML=_rbSearchProds.map((p,i)=>{
+      const nm=p.product_name_it||p.product_name,n=p.nutriments;
+      return`<div class="sri" onclick="selectRBProd(${i},'online')"><div class="sri-name">${esc(nm)}</div><div class="sri-macros">${Math.round(n['energy-kcal_100g']||0)} kcal · P${r1(n['proteins_100g']||0)}g · C${r1(n['carbohydrates_100g']||0)}g · F${r1(n['fat_100g']||0)}g (per 100g)</div></div>`;
+    }).join('');
+  }catch{$('rb-search-results').innerHTML='<div class="s-status" style="padding:9px">⚠ Errore di rete</div>';}
+}
+function selectRBProd(i,mode){
+  let prod,g=100;
+  if(mode==='offline'){prod=window._rbOfflineHits?.[i];if(!prod)return;$('rb-ing-name-in').value=prod.product_name||prod.n;$('rb-ing-g').value=100;$('rb-ing-kcal').value=prod.k||0;$('rb-ing-p').value=prod.p||0;$('rb-ing-c').value=prod.c||0;$('rb-ing-f').value=prod.f||0;}
+  else{prod=_rbSearchProds[i];if(!prod)return;const nm=prod.product_name_it||prod.product_name;g=Math.round(parseFloat(prod.serving_size)||0)||100;const n=prod.nutriments;const m=macros100(n,g);$('rb-ing-name-in').value=nm;$('rb-ing-g').value=g;$('rb-ing-kcal').value=m.k;$('rb-ing-p').value=m.p;$('rb-ing-c').value=m.c;$('rb-ing-f').value=m.f;}
+  $('rb-search-wrap').style.display='none';
+  $('rb-ing-form').style.display='block';
+  $('rb-ing-name-in').scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+function renderRBFavs(){
+  const el=$('rb-fav-list');if(!el)return;
+  el.innerHTML=favorites.length
+    ?favorites.map((f,i)=>`<div class="s-cached-row" onclick="selectRBFav(${i})"><span class="scr-icon">⭐</span><span class="scr-name">${esc(f.n)}</span><span class="scr-kcal">${f.k} kcal</span></div>`).join('')
+    :'<div style="font-size:12px;color:var(--tx3);padding:7px">Nessun preferito</div>';
+  $('rb-ing-form').style.display='none';
+  $('rb-search-wrap').style.display='none';
+  $('rb-fav-wrap').style.display='block';
+}
+function selectRBFav(i){
+  const f=favorites[i];if(!f)return;
+  const m=f.n.match(/(\d+)\s*g/i),bg=m?parseInt(m[1]):100;
+  const kp=r1(f.k/bg),pp=r1(f.p/bg),cp=r1(f.c/bg),fp=r1(f.f/bg);
+  $('rb-ing-name-in').value=f.n.replace(/\d+\s*g/i,'').trim();
+  $('rb-ing-g').value=bg;$('rb-ing-kcal').value=Math.round(kp*bg);
+  $('rb-ing-p').value=r1(pp*bg);$('rb-ing-c').value=r1(cp*bg);$('rb-ing-f').value=r1(fp*bg);
+  $('rb-fav-wrap').style.display='none';
+  $('rb-ing-form').style.display='block';
+}
 function resetRB(){
-  rbIngredients=[];editingRecipeIdx=null;
+  rbIngredients=[];editingRecipeIdx=null;_rbSearchProds=[];
   $('rb-name').value='';$('rb-portions').value='1';
   ['rb-ing-name-in','rb-ing-g','rb-ing-kcal','rb-ing-p','rb-ing-c','rb-ing-f'].forEach(id=>{$(id).value='';});
-  $('rb-ing-list').innerHTML='';$('rb-title').textContent='🍳 Nuova ricetta';updateRBTotals();
+  $('rb-ing-list').innerHTML='';$('rb-title').textContent='🍳 Nuova ricetta';
+  if($('rb-ing-form'))$('rb-ing-form').style.display='none';
+  if($('rb-search-wrap'))$('rb-search-wrap').style.display='none';
+  if($('rb-fav-wrap'))$('rb-fav-wrap').style.display='none';
+  if($('rb-search-q'))$('rb-search-q').value='';
+  updateRBTotals();
 }
 function addRBIngredient(){
   const name=$('rb-ing-name-in').value.trim(),g=parseFloat($('rb-ing-g').value)||0;
@@ -2800,6 +3056,7 @@ function installApp(){if(deferredInstall){deferredInstall.prompt();deferredInsta
 if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 // ═══ INIT ═════════════════════════════════════════════════
 (function init(){
+  const vl=document.getElementById('ver-lbl');if(vl)vl.textContent=APP_VERSION;
   const saved=LS.get('nt_'+today(),null);
   if(saved){logged=saved.logged||logged;dayType=saved.dayType||'training';mealNotes=saved.notes||mealNotes;}
   else{const ct=calendar[todayDow()];if(ct)dayType=ct;}

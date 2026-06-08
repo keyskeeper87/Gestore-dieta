@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="it">
 <head>
@@ -801,21 +802,28 @@ a{color:var(--blue-tx)}
     <div class="card">
       <h3>📤 Export &amp; Backup</h3>
       <div class="range-row" id="rng-json">
-        <button class="range-chip active" onclick="setRange('json',1)">Oggi</button>
+        <button class="range-chip" onclick="setRange('json',1)">Oggi</button>
         <button class="range-chip" onclick="setRange('json',7)">7 giorni</button>
-        <button class="range-chip" onclick="setRange('json',30)">30 giorni</button>
+        <button class="range-chip active" onclick="setRange('json',30)">30 giorni</button>
       </div>
       <button class="btn-exp json" onclick="exportJSON()">⬇ JSON Google Health</button>
       <div class="range-row" id="rng-csv" style="margin-top:9px">
-        <button class="range-chip active" onclick="setRange('csv',1)">Oggi</button>
+        <button class="range-chip" onclick="setRange('csv',1)">Oggi</button>
         <button class="range-chip" onclick="setRange('csv',7)">7 giorni</button>
-        <button class="range-chip" onclick="setRange('csv',30)">30 giorni</button>
+        <button class="range-chip active" onclick="setRange('csv',30)">30 giorni</button>
       </div>
       <button class="btn-exp csv" onclick="exportCSV()">⬇ CSV</button>
-      <button class="btn-exp bkp" style="margin-top:7px" onclick="exportBackup()">⬇ Backup completo</button>
-      <button class="btn-exp bkp" style="margin-top:7px;background:var(--amber-bg);color:var(--amber-tx);border-color:var(--amber)" onclick="exportProfile()">⬇ Esporta profilo (preferiti, ricette, template)</button>
-      <button class="btn-exp bkp" style="margin-top:7px" onclick="document.getElementById('restore-in').click()">⬆ Importa backup</button>
-      <button class="btn-exp bkp" style="margin-top:7px;background:var(--amber-bg);color:var(--amber-tx);border-color:var(--amber)" onclick="document.getElementById('import-profile-in').click()">⬆ Importa profilo</button>
+      <div style="border-top:.5px solid var(--br);margin-top:11px;padding-top:11px">
+        <div style="font-size:10px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:7px">⬇ Download</div>
+        <button class="btn-exp" style="background:var(--green-bg);color:var(--green-tx);border:.5px solid var(--green);margin-top:0" onclick="exportBackup()">💾 Scarica backup completo (tutti i dati)</button>
+        <button class="btn-exp" style="background:var(--green-bg);color:var(--green-tx);border:.5px solid var(--green);margin-top:7px" onclick="exportProfile()">⭐ Scarica profilo (preferiti, ricette, template, target)</button>
+      </div>
+      <div style="border-top:.5px solid var(--br);margin-top:11px;padding-top:11px">
+        <div style="font-size:10px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px">⬆ Ripristina</div>
+        <div style="font-size:11px;color:var(--amber-tx);background:var(--amber-bg);border-radius:var(--r8);padding:7px 10px;margin-bottom:7px">⚠️ Sovrascrive i dati esistenti — assicurati di avere un backup recente</div>
+        <button class="btn-exp" style="background:var(--amber-bg);color:var(--amber-tx);border:.5px solid var(--amber);margin-top:0" onclick="document.getElementById('restore-in').click()">📂 Ripristina da backup completo</button>
+        <button class="btn-exp" style="background:var(--amber-bg);color:var(--amber-tx);border:.5px solid var(--amber);margin-top:7px" onclick="document.getElementById('import-profile-in').click()">📂 Ripristina profilo (preferiti, ricette, template)</button>
+      </div>
       <input type="file" id="restore-in" accept=".json" style="display:none" onchange="importBackup(event)">
       <input type="file" id="import-profile-in" accept=".json" style="display:none" onchange="importProfile(event)">
     </div>
@@ -1285,7 +1293,7 @@ let geminiKey=LS.get('nt_gemini_key','');
 let smartNotifs=LS.get('nt_smart_notifs',{macroDone:false,protWarn:false,morning:false,morningTime:'07:30'});
 let foodCache=LS.get('nt_food_cache',{});
 let searchCache=LS.get('nt_search_cache',[]);
-let exportRanges={json:1,csv:1};
+let exportRanges={json:30,csv:30};
 let rollRange=14;
 let prepWeekOff=0;
 let obStep=0;

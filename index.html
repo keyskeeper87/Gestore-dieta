@@ -519,6 +519,7 @@ a{color:var(--blue-tx)}
         <div id="water-bar" style="height:100%;border-radius:3px;background:#1090c8;transition:width .4s cubic-bezier(.4,0,.2,1);width:0%"></div>
       </div>
       <span id="water-lbl" style="font-size:10px;font-weight:700;color:var(--tx2);min-width:64px;text-align:right">0 / 2500 ml</span>
+      <button onclick="addWater(-200)" style="padding:3px 9px;border-radius:10px;background:var(--sf2);color:var(--tx2);border:.5px solid var(--br2);font-size:10px;font-weight:700">−200</button>
       <button onclick="addWater(200)" style="padding:3px 9px;border-radius:10px;background:var(--blue-bg);color:var(--blue-tx);border:.5px solid var(--blue);font-size:10px;font-weight:700">+200</button>
       <button onclick="addWater(500)" style="padding:3px 9px;border-radius:10px;background:var(--blue-bg);color:var(--blue-tx);border:.5px solid var(--blue);font-size:10px;font-weight:700">+500</button>
       <button onclick="resetWater()" style="padding:3px 7px;border-radius:10px;background:var(--sf2);color:var(--tx3);font-size:10px">↺</button>
@@ -565,6 +566,11 @@ a{color:var(--blue-tx)}
   </div>
   <div class="sec-blk" id="avg-block"></div>
   <div style="padding:8px 16px 0;background:var(--sf);border-bottom:.5px solid var(--br)">
+    <div style="display:flex;gap:5px;margin-bottom:7px">
+      <button class="roll-chip active" id="hf-all"      onclick="setHistFilter('all')">Tutti</button>
+      <button class="roll-chip"        id="hf-training" onclick="setHistFilter('training')">🏋️ Training</button>
+      <button class="roll-chip"        id="hf-rest"     onclick="setHistFilter('rest')">🛌 Rest</button>
+    </div>
     <div class="search-row" style="margin-bottom:8px">
       <input type="text" class="sh-input" id="hist-search-q" placeholder="Cerca alimento nello storico…" style="margin-bottom:0" autocomplete="off" oninput="filterHistList(this.value)">
       <button class="btn-go" onclick="filterHistList(document.getElementById('hist-search-q').value)">🔍</button>
@@ -674,6 +680,17 @@ a{color:var(--blue-tx)}
       </div>
       <input type="text" class="sh-input" id="bc-note" placeholder="Note (es. mattino a digiuno…)" style="margin-bottom:9px">
       <button class="btn-checkin" onclick="saveCheckin()">💾 Salva check-in</button>
+      <div style="border-top:.5px solid var(--br);margin-top:11px;padding-top:11px">
+        <div style="font-size:10px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Import da Fitdays</div>
+        <div style="font-size:11px;color:var(--tx2);margin-bottom:7px;line-height:1.5">Esporta il CSV dall'app Fitdays (Profilo → Esporta dati) e importalo qui.</div>
+        <div class="import-zone" id="fitdays-import-zone" style="padding:12px 16px">
+          <input type="file" id="fitdays-csv-input" accept=".csv,.txt" onchange="importFitdaysCSV(event)">
+          <div style="font-size:22px;margin-bottom:4px">📊</div>
+          <div style="font-size:12px;font-weight:700;margin-bottom:2px">Trascina o tocca per selezionare</div>
+          <div style="font-size:11px;color:var(--tx2)">CSV esportato da Fitdays</div>
+        </div>
+        <div id="fitdays-import-result" style="display:none"></div>
+      </div>
     </div>
   </div>
   <div class="body-chart" id="body-chart" style="display:none">
@@ -805,6 +822,10 @@ a{color:var(--blue-tx)}
         <div class="smart-notif-row"><div><div class="smart-notif-lbl">Proteine in ritardo</div><div class="smart-notif-sub">Avviso a mezzogiorno se &lt;40% proteine</div></div><label class="tog"><input type="checkbox" id="notif-prot-warn" onchange="saveSmartNotifs()"><span class="tog-sl"></span></label></div>
         <div class="smart-notif-row"><div><div class="smart-notif-lbl">Riepilogo mattina</div><div class="smart-notif-sub">Target e tipo giorno al mattino</div></div><label class="tog"><input type="checkbox" id="notif-morning" onchange="saveSmartNotifs()"><span class="tog-sl"></span></label></div>
         <div class="time-row" style="margin-top:7px"><label>Orario mattina</label><input type="time" id="notif-morning-time" value="07:30" onchange="saveSmartNotifs()"></div>
+        <div class="smart-notif-row" style="margin-top:6px">
+          <div><div class="smart-notif-lbl">Pasti non completati</div><div class="smart-notif-sub">Avviso serale se almeno un pasto è vuoto</div></div>
+          <label class="tog"><input type="checkbox" id="notif-meals-incomplete" onchange="saveSmartNotifs()"><span class="tog-sl"></span></label>
+        </div>
       </div>
       <div style="border-top:.5px solid var(--br);margin-top:10px;padding-top:10px">
         <div class="tog-row" style="margin-bottom:4px">
@@ -1254,7 +1275,8 @@ a{color:var(--blue-tx)}
 
 <script>
 'use strict';
-const APP_VERSION = '2.7.0'; // sessione.feature.patch
+const APP_VERSION = '2.9.0';
+const DATA_VERSION = 1; // increment when localStorage schema changes // sessione.feature.patch
 // ═══ CONSTANTS ═══════════════════════════════════════════
 const DAYS_IT=['Domenica','Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato'];
 const DAYS_S=['Dom','Lun','Mar','Mer','Gio','Ven','Sab'];
@@ -1429,8 +1451,32 @@ function fmtDate(s){
   if(s===ieri.toISOString().split('T')[0])return'Ieri';
   return DAYS_IT[dt.getDay()]+' '+d+' '+MONTHS_IT[m-1];
 }
-function macros100(n,g){const r=g/100;return{k:Math.round((n['energy-kcal_100g']||0)*r),p:r1((n['proteins_100g']||0)*r),c:r1((n['carbohydrates_100g']||0)*r),f:r1((n['fat_100g']||0)*r)};}
-function pmHTML(k,p,c,f){return`<div class="pm"><div class="pm-val">${k}</div><div class="pm-lbl">kcal</div></div><div class="pm"><div class="pm-val">${p}g</div><div class="pm-lbl">prot.</div></div><div class="pm"><div class="pm-val">${c}g</div><div class="pm-lbl">carbo</div></div><div class="pm"><div class="pm-val">${f}g</div><div class="pm-lbl">grassi</div></div>`;}
+function macros100(n,g){
+  const r=g/100;
+  const base={k:Math.round((n['energy-kcal_100g']||0)*r),p:r1((n['proteins_100g']||0)*r),c:r1((n['carbohydrates_100g']||0)*r),f:r1((n['fat_100g']||0)*r)};
+  // ARCH-10: include micros if available in OFF response
+  const hasAny=(n['fiber_100g']!=null||n['sugars_100g']!=null||n['sodium_100g']!=null);
+  if(hasAny){
+    base.micros={
+      fiber: n['fiber_100g']!=null ? r1(n['fiber_100g']*r) : null,
+      sugar: n['sugars_100g']!=null ? r1(n['sugars_100g']*r) : null,
+      sodium: n['sodium_100g']!=null ? Math.round(n['sodium_100g']*r*1000) : null, // mg
+      potassium: n['potassium_100g']!=null ? Math.round(n['potassium_100g']*r*1000) : null // mg
+    };
+  }
+  return base;
+}
+function pmHTML(k,p,c,f,micros){
+  let html=`<div class="pm"><div class="pm-val">${k}</div><div class="pm-lbl">kcal</div></div><div class="pm"><div class="pm-val">${p}g</div><div class="pm-lbl">prot.</div></div><div class="pm"><div class="pm-val">${c}g</div><div class="pm-lbl">carbo</div></div><div class="pm"><div class="pm-val">${f}g</div><div class="pm-lbl">grassi</div></div>`;
+  if(micros){
+    const parts=[];
+    if(micros.fiber!=null) parts.push(`Fibre: ${micros.fiber}g`);
+    if(micros.sugar!=null) parts.push(`Zuccheri: ${micros.sugar}g`);
+    if(micros.sodium!=null) parts.push(`Sodio: ${micros.sodium}mg`);
+    if(parts.length) html+=`<div style="grid-column:1/-1;font-size:10px;color:var(--tx3);margin-top:4px;line-height:1.6">${parts.join(' · ')}</div>`;
+  }
+  return html;
+}
 function setQGActive(id,val){const c=$(id);if(c)c.querySelectorAll('.qg-chip').forEach(b=>b.classList.toggle('active',parseInt(b.textContent)===val));}
 function toast(msg,type='info'){
   const el=$('toast');el.textContent=msg;el.classList.add('show');
@@ -1498,7 +1544,7 @@ function showPage(id){
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
   $('page-'+id).classList.add('active');
   $('nav-'+id).classList.add('active');
-  if(id==='history'){renderHistoryPage();const hq=document.getElementById('hist-search-q');if(hq)hq.value='';}
+  if(id==='history'){_histFilter='all';renderHistoryPage();const hq=document.getElementById('hist-search-q');if(hq)hq.value='';['all','training','rest'].forEach(t=>{const b=document.getElementById('hf-'+t);if(b)b.classList.toggle('active',t==='all');});}
   if(id==='rolling')renderRollingPage();
   if(id==='recipes')renderRecipesPage();
   if(id==='prep')renderPrepPage();
@@ -1544,7 +1590,7 @@ function renderMeals(){
         <div class="log-inner${item._new?' new-item':''}">
           <div style="flex:1">
             <div class="li-name">${esc(item.n)}</div>
-            <div class="li-sub">${item.k} kcal · P${item.p}g · C${item.c}g · F${item.f}g</div>
+            <div class="li-sub">${item.k} kcal · P${item.p}g · C${item.c}g · F${item.f}g${item.micros&&item.micros.fiber!=null?' · Fibre:'+item.micros.fiber+'g':''}</div>
             ${item._ai?'<div class="li-ai">Stima AI — verifica grammatura</div>':''}
           </div>
           <div class="li-acts">
@@ -1563,7 +1609,7 @@ function renderMeals(){
     }).join('');
     const wrap=document.createElement('div');wrap.className='meals-wrap';
     wrap.innerHTML=`<div class="meal-card${isCur?' suggested':''}">
-      <div class="meal-head"><span class="meal-name">${MEAL_LABELS[key]}</span><span class="meal-sum">${mkcal} kcal</span></div>
+      <div class="meal-head"><span class="meal-name">${MEAL_LABELS[key]}</span><span class="meal-sum">${mkcal} kcal</span><button onclick="copyMealFromYesterday('${key}')" style="font-size:10px;padding:2px 7px;border-radius:8px;background:var(--sf3);color:var(--tx2);border:.5px solid var(--br2);margin-left:5px" title="Copia da ieri">📋</button></div>
       ${itemsHTML}
       <div><textarea class="note-ta" rows="1" placeholder="+ nota pasto…" oninput="mealNotes['${key}']=this.value">${esc(note)}</textarea></div>
       <div class="chips-area">
@@ -1631,12 +1677,13 @@ function waterKey(){ return 'nt_water_' + today(); }
 function getWater(){ return LS.get(waterKey(), 0); }
 function addWater(ml){
   const cur = getWater();
-  const next = Math.min(cur + ml, waterTarget * 2);
+  const next = Math.max(0, Math.min(cur + ml, waterTarget * 2));
   LS.set(waterKey(), next);
   renderWaterBar();
   vib(15);
-  if(next >= waterTarget && cur < waterTarget) toast('💧 Obiettivo idratazione raggiunto!');
-  else toast('💧 +' + ml + 'ml — tot ' + next + 'ml');
+  if(ml > 0 && next >= waterTarget && cur < waterTarget) toast('💧 Obiettivo idratazione raggiunto!');
+  else if(ml > 0) toast('💧 +' + ml + 'ml — tot ' + next + 'ml');
+  else toast('💧 −' + Math.abs(ml) + 'ml — tot ' + next + 'ml');
 }
 function resetWater(){
   LS.set(waterKey(), 0);
@@ -1784,7 +1831,7 @@ async function doSearch(){
   if(cached){searchProds=cached;renderSearchResults(q,cached,true);return;}
   $('search-results').innerHTML='<div class="s-status">🔍 Ricerca in corso…</div>';
   try{
-    const url=`https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=15&lc=it&cc=it&fields=product_name,product_name_it,brands,nutriments,serving_size`;
+    const url=`https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&page_size=15&lc=it&cc=it&fields=product_name,product_name_it,brands,nutriments,serving_size,nutriscore_grade`;
     const data=await(await fetch(url)).json();
     searchProds=(data.products||[]).filter(p=>p.product_name&&p.nutriments?.['energy-kcal_100g']!=null);
     if(!searchProds.length){$('search-results').innerHTML='<div class="s-status">Nessun risultato.</div>';return;}
@@ -1807,7 +1854,10 @@ function renderSearchResults(q,prods,fromCache){
   const el=$('search-results');el.style.display='block';
   el.innerHTML=`<div class="s-sec-lbl">${prods.length} risultati per "${esc(q)}"${fromCache?' <span style="color:var(--tx3)">(cache)</span>':''}</div>`
     +prods.map((p,i)=>{const nm=p.product_name_it||p.product_name,br=p.brands?.split(',')[0].trim()||'',n=p.nutriments;
-      return`<div class="sri" onclick="selectDBProd(${i})"><div class="sri-name">${esc(nm)}</div>${br?`<div class="sri-brand">${esc(br)}</div>`:''}<div class="sri-macros">${Math.round(n['energy-kcal_100g']||0)} kcal · P${r1(n['proteins_100g']||0)}g · C${r1(n['carbohydrates_100g']||0)}g · F${r1(n['fat_100g']||0)}g <span style="color:var(--tx3)">(per 100g)</span></div></div>`;
+      const ns=p.nutriscore_grade;
+      const nsBg={a:'#1a8a2a',b:'#58a425',c:'#e8b800',d:'#e07800',e:'#d63000'}[ns]||null;
+      const nsBadge=nsBg?`<span style="display:inline-block;background:${nsBg};color:#fff;font-size:9px;font-weight:800;padding:1px 5px;border-radius:4px;margin-left:4px;text-transform:uppercase">${ns}</span>`:'';
+      return`<div class="sri" onclick="selectDBProd(${i})"><div class="sri-name">${esc(nm)}${nsBadge}</div>${br?`<div class="sri-brand">${esc(br)}</div>`:''}<div class="sri-macros">${Math.round(n['energy-kcal_100g']||0)} kcal · P${r1(n['proteins_100g']||0)}g · C${r1(n['carbohydrates_100g']||0)}g · F${r1(n['fat_100g']||0)}g <span style="color:var(--tx3)">(per 100g)</span></div></div>`;
     }).join('');
 }
 function selectDBProd(i){
@@ -1821,11 +1871,12 @@ function showDBPortion(name,brand,g,isFav){
   $('pp-g').value=g;setQGActive('pp-g-qg',g);previewPP();
   const fb=$('pp-fav-btn');fb.disabled=isFav;fb.textContent=isFav?'✅ Già preferito':'⭐ Aggiungi ai preferiti';
 }
-function previewPP(){if(!dbProd)return;const g=parseFloat($('pp-g').value)||0;const m=macros100(dbProd.nutriments,g);$('pp-macros').innerHTML=pmHTML(m.k,m.p,m.c,m.f);}
+function previewPP(){if(!dbProd)return;const g=parseFloat($('pp-g').value)||0;const m=macros100(dbProd.nutriments,g);$('pp-macros').innerHTML=pmHTML(m.k,m.p,m.c,m.f,m.micros);}
 function addFromDB(){
   if(!dbProd)return;const g=parseFloat($('pp-g').value)||0;const m=macros100(dbProd.nutriments,g);
   const name=(dbProd.product_name_it||dbProd.product_name)+' '+g+'g';
-  logged[curMealKey].push({n:name,...m,_new:true});closeAddFood();renderMeals();markUnsaved();toast('✓ '+name.split(' ').slice(0,3).join(' '));
+  const entry={n:name,...m,_new:true};if(m.micros)entry.micros=m.micros;
+  logged[curMealKey].push(entry);closeAddFood();renderMeals();markUnsaved();toast('✓ '+name.split(' ').slice(0,3).join(' '));
 }
 function addFavFromDB(){
   if(!dbProd)return;const g=parseFloat($('pp-g').value)||100;const m=macros100(dbProd.nutriments,g);
@@ -1871,7 +1922,7 @@ async function lookupBarcode(code){
     const fb=$('bp-fav-btn');fb.disabled=isFav;fb.textContent=isFav?'✅ Già preferito':'⭐ Aggiungi ai preferiti';
   }catch{status.textContent='⚠ Errore di rete.';}
 }
-function previewBP(){if(!bcProd)return;const g=parseFloat($('bp-g').value)||0;$('bp-macros').innerHTML=pmHTML(...Object.values(macros100(bcProd.nutriments||{},g)));}
+function previewBP(){if(!bcProd)return;const g=parseFloat($('bp-g').value)||0;const m=macros100(bcProd.nutriments||{},g);$('bp-macros').innerHTML=pmHTML(m.k,m.p,m.c,m.f,m.micros);}
 function addFromBC(){
   if(!bcProd)return;const g=parseFloat($('bp-g').value)||0;const m=macros100(bcProd.nutriments||{},g);
   const name=(bcProd.product_name_it||bcProd.product_name||'Prodotto')+' '+g+'g';
@@ -2142,6 +2193,17 @@ function autoSave(){
 setInterval(autoSave,30000);
 window.addEventListener('visibilitychange',()=>{if(document.hidden)autoSave();});
 window.addEventListener('beforeunload',autoSave);
+// ── UX-V: Copia singolo pasto da giorno precedente ───────
+function copyMealFromYesterday(mealKey){
+  const days=histDays().filter(d=>d.date<today());
+  if(!days.length){toast('⚠ Nessun giorno precedente','error');return;}
+  const prev=days[0];
+  const items=prev.logged[mealKey]||[];
+  if(!items.length){toast('⚠ '+MEAL_LABELS[mealKey].replace(/^.+? /,'')+' vuoto il '+fmtDate(prev.date),'error');return;}
+  items.forEach(f=>logged[mealKey].push({...f,_new:true}));
+  renderMeals();markUnsaved();vib([15,10,15]);
+  toast('📋 '+MEAL_LABELS[mealKey].replace(/^.+? /,'')+' copiato da '+fmtDate(prev.date));
+}
 function copyPrevDay(){
   // Find most recent logged day before today
   const days = histDays().filter(d => d.date < today());
@@ -2467,16 +2529,24 @@ function saveEditHist(){
   toast('✅ Giornata del '+fmtDate(_editHistDate)+' aggiornata');
   vib([30,20,30]);
 }
-// ── UX-L: Ricerca nello storico ──────────────────────────
+// ── UX-L+T: Ricerca e filtro storico ─────────────────────
+let _histFilter='all';
+function setHistFilter(type){
+  _histFilter=type;
+  ['all','training','rest'].forEach(t=>{
+    const btn=document.getElementById('hf-'+t);
+    if(btn) btn.classList.toggle('active',t===type);
+  });
+  filterHistList(document.getElementById('hist-search-q')?.value||'');
+}
 function filterHistList(q){
   q=(q||'').trim().toLowerCase();
   const el=$('hist-list');if(!el)return;
-  if(!q){renderHistList();return;}
-  const days=histDays().filter(data=>{
-    // Match food name
-    const items=Object.values(data.logged||{}).flat();
-    return items.some(i=>i.n.toLowerCase().includes(q));
-  });
+  // Apply both type filter and text filter
+  if(!q&&_histFilter==='all'){renderHistList();return;}
+  let days=histDays();
+  if(_histFilter!=='all') days=days.filter(d=>d.dayType===_histFilter);
+  if(q) days=days.filter(data=>Object.values(data.logged||{}).flat().some(i=>i.n.toLowerCase().includes(q)));
   if(!days.length){el.innerHTML='<div class="hist-empty">Nessun risultato per "'+esc(q)+'"</div>';return;}
   // Reuse renderHistList but highlight matching items
   el.innerHTML=days.map((data,idx)=>{
@@ -2635,8 +2705,18 @@ function renderRollKPI(days){
   const tgt=targets(),avgT=Math.round(days.reduce((s,d)=>s+(tgt[d.dayType]?.kcal||0),0)/days.length);
   const delta=avgK-avgT,cls=delta>150?'d-pos':delta<-150?'d-neg':'d-ok',ds=delta>0?`+${delta} sopra`:delta<0?`${Math.abs(delta)} sotto`:'In target';
   const adh=Math.round(days.filter(d=>dayTotals(d).k>=(tgt[d.dayType]?.kcal||1)*.85).length/days.length*100);
+  // NUTR-1: avg micros if available
+  const microDays=days.filter(d=>Object.values(d.logged||{}).flat().some(i=>i.micros));
+  let avgFiber=null,avgSodium=null;
+  if(microDays.length>=3){
+    const fSum=microDays.map(d=>Object.values(d.logged||{}).flat().reduce((s,i)=>s+(i.micros?.fiber||0),0));
+    avgFiber=Math.round(fSum.reduce((a,b)=>a+b,0)/microDays.length);
+    const sSum=microDays.map(d=>Object.values(d.logged||{}).flat().reduce((s,i)=>s+(i.micros?.sodium||0),0));
+    avgSodium=Math.round(sSum.reduce((a,b)=>a+b,0)/microDays.length);
+  }
   el.innerHTML=[{val:avgK+' kcal',lbl:'Media kcal/gg',sub:`<span class="${cls}">${ds}</span>`},{val:adh+'%',lbl:'Aderenza target',sub:days.length+' giorni'},{val:avgP+'g',lbl:'Proteine medie',sub:'target '+tgt.training.p+'g'},{val:avgC+'g',lbl:'Carbo medi',sub:'target '+tgt.training.c+'g'}]
-    .map(({val,lbl,sub})=>`<div class="roll-kpi"><div class="roll-kpi-val">${val}</div><div class="roll-kpi-lbl">${lbl}</div><div class="roll-kpi-sub">${sub}</div></div>`).join('');
+    .map(({val,lbl,sub})=>`<div class="roll-kpi"><div class="roll-kpi-val">${val}</div><div class="roll-kpi-lbl">${lbl}</div><div class="roll-kpi-sub">${sub}</div></div>`).join('')
+    +(avgFiber!==null?`<div class="roll-kpi" style="background:var(--green-bg)"><div class="roll-kpi-val" style="color:var(--green-tx)">${avgFiber}g</div><div class="roll-kpi-lbl">Fibre medie</div><div class="roll-kpi-sub">${microDays.length} giorni con dati</div></div><div class="roll-kpi" style="background:var(--amber-bg)"><div class="roll-kpi-val" style="color:var(--amber-tx)">${avgSodium}mg</div><div class="roll-kpi-lbl">Sodio medio</div><div class="roll-kpi-sub">target &lt;2300mg</div></div>`:'');
 }
 function renderMovingAvg(days){
   const svg=$('mavg-svg');
@@ -2686,6 +2766,105 @@ function renderStreak(days){
   }).join('');
 }
 // ═══ BODY COMP ════════════════════════════════════════════
+// ── INFRA-4: Import CSV Fitdays ──────────────────────────
+function importFitdaysCSV(e){
+  const file=e.target.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    try{
+      const result=parseFitdaysCSV(ev.target.result);
+      showFitdaysImportResult(result);
+    }catch(err){
+      const el=$('fitdays-import-result');
+      el.style.display='block';
+      el.innerHTML=`<div class="import-err">⚠ Errore: ${esc(err.message)}</div>`;
+    }
+  };
+  reader.readAsText(file,'UTF-8');
+  e.target.value='';
+}
+function parseFitdaysCSV(text){
+  const lines=text.trim().split(/\r?\n/).map(l=>l.split(',').map(v=>v.trim().replace(/^"|"$/g,'')));
+  if(lines.length<2) throw new Error('File CSV vuoto o non valido');
+  const header=lines[0].map(h=>h.toLowerCase().replace(/\s+/g,'_'));
+  // Detect Fitdays column names (multilingual)
+  const findCol=(names)=>{for(const n of names){const i=header.findIndex(h=>h.includes(n));if(i>=0)return i;}return -1;};
+  const dateCol=findCol(['date','data','datetime','time']);
+  const weightCol=findCol(['weight','peso','body_weight','bw']);
+  const fatCol=findCol(['body_fat','fat%','grasso','fat_percent','bodyfat','body fat']);
+  const muscleCol=findCol(['muscle','muscolo','muscle_mass','lean','lean_mass']);
+  const waterCol=findCol(['water','acqua','body_water','water%']);
+  if(dateCol<0||weightCol<0) throw new Error('Colonne "data" e "peso" non trovate. Verifica il formato CSV Fitdays.');
+  const parsed=[];
+  lines.slice(1).forEach(row=>{
+    if(!row[dateCol]||!row[weightCol])return;
+    const rawDate=row[dateCol].trim();
+    // Parse various date formats: YYYY-MM-DD, DD/MM/YYYY, MM/DD/YYYY, YYYY/MM/DD
+    let isoDate=null;
+    const tryFormats=[
+      /^(\d{4})-(\d{2})-(\d{2})/,          // YYYY-MM-DD
+      /^(\d{4})\/(\d{2})\/(\d{2})/,         // YYYY/MM/DD
+      /^(\d{2})\/(\d{2})\/(\d{4})$/,        // DD/MM/YYYY
+    ];
+    if(tryFormats[0].test(rawDate)||tryFormats[1].test(rawDate)){
+      isoDate=rawDate.replace(/\//g,'-').slice(0,10);
+    } else if(tryFormats[2].test(rawDate)){
+      const[,d,m,y]=rawDate.match(tryFormats[2]);
+      isoDate=`${y}-${m}-${d}`;
+    }
+    if(!isoDate)return;
+    const w=parseFloat(row[weightCol]);if(!w||isNaN(w))return;
+    const entry={
+      date:isoDate,weight:w,
+      fat:fatCol>=0&&row[fatCol]?parseFloat(row[fatCol])||null:null,
+      muscle:muscleCol>=0&&row[muscleCol]?parseFloat(row[muscleCol])||null:null,
+      water:waterCol>=0&&row[waterCol]?parseFloat(row[waterCol])||null:null,
+      note:'Importato da Fitdays'
+    };
+    parsed.push(entry);
+  });
+  if(!parsed.length) throw new Error('Nessun dato valido trovato nel CSV');
+  return parsed;
+}
+function showFitdaysImportResult(parsed){
+  const el=$('fitdays-import-result');
+  el.style.display='block';
+  const existing=checkins.map(c=>c.date);
+  const newEntries=parsed.filter(p=>!existing.includes(p.date));
+  const updates=parsed.filter(p=>existing.includes(p.date));
+  el.innerHTML=`<div class="import-preview" style="margin-top:9px">
+    <div style="font-size:13px;font-weight:700;margin-bottom:5px">📊 ${parsed.length} righe trovate</div>
+    <div style="font-size:12px;color:var(--tx2);line-height:1.7;margin-bottom:9px">
+      ✅ ${newEntries.length} nuovi check-in da aggiungere<br>
+      🔄 ${updates.length} check-in esistenti da aggiornare<br>
+      📅 Range: ${parsed[parsed.length-1]?.date} → ${parsed[0]?.date}
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn-no" style="flex:1;padding:9px;border-radius:var(--r8)" onclick="cancelFitdaysImport()">Annulla</button>
+      <button class="btn-yes" style="flex:1;padding:9px;border-radius:var(--r8)" onclick="confirmFitdaysImport(${JSON.stringify(parsed).replace(/"/g,'&quot;')})">✅ Importa</button>
+    </div>
+  </div>`;
+}
+function confirmFitdaysImport(parsed){
+  if(typeof parsed==='string') try{parsed=JSON.parse(parsed);}catch{return;}
+  let added=0,updated=0;
+  parsed.forEach(entry=>{
+    const idx=checkins.findIndex(c=>c.date===entry.date);
+    if(idx>=0){checkins[idx]=entry;updated++;}
+    else{checkins.push(entry);added++;}
+  });
+  checkins.sort((a,b)=>b.date.localeCompare(a.date));
+  LS.set('nt_checkins',checkins);
+  $('fitdays-import-result').style.display='none';
+  renderBodyPage();
+  toast(`✅ ${added} aggiunti, ${updated} aggiornati`,'success');
+  vib([20,15,20]);
+}
+function cancelFitdaysImport(){
+  $('fitdays-import-result').style.display='none';
+  $('fitdays-csv-input').value='';
+}
+
 // ── UX-P: Peso rapido ────────────────────────────────────
 function saveQuickWeight(){
   const w = parseFloat(document.getElementById('quick-weight').value);
@@ -2844,6 +3023,7 @@ function renderSettingsPage(){
   if(el('notif-prot-warn'))el('notif-prot-warn').checked=sn.protWarn;
   if(el('notif-morning'))el('notif-morning').checked=sn.morning;
   if(el('notif-morning-time'))el('notif-morning-time').value=sn.morningTime||'07:30';
+  if(el('notif-meals-incomplete'))el('notif-meals-incomplete').checked=sn.mealsIncomplete||false;
 }
 // ── Calendar ──────────────────────────────────────────────
 function renderCalGrid(){
@@ -2948,7 +3128,8 @@ function saveSmartNotifs(){
     macroDone:$('notif-macro-done')?.checked||false,
     protWarn:$('notif-prot-warn')?.checked||false,
     morning:$('notif-morning')?.checked||false,
-    morningTime:$('notif-morning-time')?.value||'07:30'
+    morningTime:$('notif-morning-time')?.value||'07:30',
+    mealsIncomplete:$('notif-meals-incomplete')?.checked||false
   };
   LS.set('nt_smart_notifs',smartNotifs);scheduleSmartNotifs();toast('✅ Notifiche salvate');
 }
@@ -2979,6 +3160,20 @@ function checkSmartNotifs(){
     if(!LS.get('nt_notif_prot_'+today(),false)){
       try{new Notification('⚠️ NutriTrack — Proteine basse',{body:`Solo ${Math.round(tP)}g di proteine su ${t.p}g target.`,icon:'icon-192.png',tag:'nt-prot-warn'});}catch{}
       LS.set('nt_notif_prot_'+today(),true);
+    }
+  }
+  // Reminder pasti incompleti — serale (dalle 19:00)
+  if(smartNotifs.mealsIncomplete&&h>=19){
+    if(!LS.get('nt_notif_meals_'+today(),false)){
+      const savedDay=LS.get('nt_'+today(),null);
+      const loggedMeals=savedDay?Object.values(savedDay.logged||{}).filter(arr=>arr.length>0).length:0;
+      const emptyMeals=MEAL_KEYS.filter(k=>!(savedDay?.logged[k]?.length));
+      if(emptyMeals.length>=2){
+        const names=emptyMeals.map(k=>MEAL_LABELS[k].replace(/^.+? /,'')).join(', ');
+        try{new Notification('🍽️ NutriTrack — Pasti mancanti',{body:`Non hai ancora loggato: ${names}`,icon:'icon-192.png',tag:'nt-meals-incomplete'});}catch{}
+        LS.set('nt_notif_meals_'+today(),true);
+        updateNotifBadge(true);
+      }
     }
   }
 }
@@ -3577,9 +3772,15 @@ function exportJSON(){
 }
 function exportCSV(){
   const days=getDaysData(exportRanges.csv);if(!days.length){toast('⚠ Nessun dato');return;}
-  let csv='Data,Tipo giorno,Pasto,Alimento,kcal,Proteine_g,Carboidrati_g,Grassi_g\n';
+  // Check if any item has micros data
+  const hasMicros=days.some(d=>Object.values(d.logged||{}).flat().some(i=>i.micros));
+  const microHdr=hasMicros?',Fibre_g,Zuccheri_g,Sodio_mg':'';
+  let csv='Data,Tipo giorno,Pasto,Alimento,kcal,Proteine_g,Carboidrati_g,Grassi_g'+microHdr+'\n';
   days.forEach(data=>{
-    MEAL_KEYS.forEach(key=>(data.logged[key]||[]).forEach(i=>{csv+=`${data.date},${data.dayType},${MEAL_LABELS[key].replace(/^.+? /,'')},"${i.n}",${i.k},${i.p},${i.c},${i.f}\n`;}));
+    MEAL_KEYS.forEach(key=>(data.logged[key]||[]).forEach(i=>{
+      const mRow=hasMicros?`,${i.micros?.fiber??''},${i.micros?.sugar??''},${i.micros?.sodium??''}`:'';
+      csv+=`${data.date},${data.dayType},${MEAL_LABELS[key].replace(/^.+? /,'')},"${i.n}",${i.k},${i.p},${i.c},${i.f}${mRow}\n`;
+    }));
     const t=dayTotals(data);csv+=`${data.date},${data.dayType},TOTALE,TOTALE,${Math.round(t.k)},${Math.round(t.p)},${Math.round(t.c)},${Math.round(t.f)}\n`;
   });
   dlFile('nutritrack_'+today()+'.csv',csv,'text/csv;charset=utf-8;');toast('✅ CSV scaricato');
@@ -3654,6 +3855,24 @@ window.addEventListener('appinstalled',()=>{$('install-btn').style.display='none
 function installApp(){if(deferredInstall){deferredInstall.prompt();deferredInstall=null;}}
 if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 // ═══ INIT ═════════════════════════════════════════════════
+// ═══ ARCH-3+4: Data versioning + migration engine ════════
+function runMigrations(fromVersion){
+  // v0 → v1: add mealKey field to favorites that don't have it (no-op, already optional)
+  // v0 → v1: ensure smartNotifs has mealsIncomplete field
+  if(fromVersion < 1){
+    if(favorites.length){
+      let changed=false;
+      favorites.forEach(f=>{if(f.mealKey===undefined){f.mealKey=null;changed=true;}});
+      if(changed) LS.set('nt_favorites',favorites);
+    }
+    const sn=LS.get('nt_smart_notifs',null);
+    if(sn&&sn.mealsIncomplete===undefined){
+      sn.mealsIncomplete=false;
+      LS.set('nt_smart_notifs',sn);
+      smartNotifs=sn;
+    }
+  }
+}
 (function init(){
   const vl=document.getElementById('ver-lbl');if(vl)vl.textContent=APP_VERSION;
   initColorMode();
@@ -3662,6 +3881,9 @@ if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serv
   if(saved){logged=saved.logged||logged;dayType=saved.dayType||'training';mealNotes=saved.notes||mealNotes;}
   else{const ct=calendar[todayDow()];if(ct)dayType=ct;}
   loadCustomPlans();
+  // Run data migrations
+  const _meta=LS.get('nt_meta',{version:0});
+  if(_meta.version<DATA_VERSION){runMigrations(_meta.version);LS.set('nt_meta',{version:DATA_VERSION});}
   searchCache=searchCache.filter(e=>Date.now()-e.ts<7*24*60*60*1000);
   LS.set('nt_search_cache',searchCache);
   applyTheme(activeTheme);

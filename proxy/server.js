@@ -41,7 +41,9 @@ const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
 app.get('/', (req, res) => res.json({
   status: 'ok',
   service: 'nutritrack-proxy',
+  version: 'proxy-v2-jsonmode',
   provider: PROVIDER,
+  model: PROVIDER === 'gemini' ? GEMINI_MODEL : 'anthropic',
   keyConfigured: PROVIDER === 'anthropic' ? !!ANTHROPIC_KEY : !!GEMINI_KEY
 }));
 

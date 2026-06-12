@@ -66,9 +66,15 @@ function anthropicToGemini(body) {
     }
     return { role, parts };
   });
-  const gem = { contents };
-  if (body.max_tokens) gem.generationConfig = { maxOutputTokens: body.max_tokens };
-  return gem;
+  // maxOutputTokens: usa quello richiesto, con un minimo di 1024 per evitare troncamenti
+  const maxOut = Math.max(body.max_tokens || 1024, 1024);
+  const genCfg = { maxOutputTokens: maxOut };
+  // JSON mode: se il prompt chiede JSON, forza Gemini a produrre JSON valido
+  const promptText = JSON.stringify(contents).toLowerCase();
+  if (promptText.includes('json')) {
+    genCfg.responseMimeType = 'application/json';
+  }
+  return { contents, generationConfig: genCfg };
 }
 
 // ── Conversione risposta Gemini → Anthropic ───────────────────────────

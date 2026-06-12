@@ -922,6 +922,19 @@ a{color:var(--blue-tx)}
       </div>
       <input type="file" id="restore-in" accept=".json" style="display:none" onchange="importBackup(event)">
       <input type="file" id="import-profile-in" accept=".json" style="display:none" onchange="importProfile(event)">
+      <div style="border-top:.5px solid var(--br);margin-top:11px;padding-top:11px">
+        <div style="font-size:10px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:7px">☁️ Google Drive</div>
+        <div id="gd-status" style="font-size:12px;color:var(--tx2);margin-bottom:8px">Solo nell'app Android</div>
+        <div id="gd-web-note" style="font-size:11px;color:var(--tx3);background:var(--bg2);border-radius:var(--r8);padding:7px 10px;margin-bottom:7px;display:none">Il sync con Google Drive funziona solo nell'app Android (richiede login nativo). Sul web usa il backup manuale qui sopra.</div>
+        <button id="gd-btn-connect" class="btn-exp" style="background:var(--green-bg);color:var(--green-tx);border:.5px solid var(--green);margin-top:0;display:none" onclick="gdConnect()">🔗 Connetti Google Drive</button>
+        <div id="gd-connected" style="display:none">
+          <div style="font-size:11px;color:var(--tx3);margin-bottom:7px">Account: <span id="gd-email" style="color:var(--tx2)"></span></div>
+          <button class="btn-exp" style="background:var(--green-bg);color:var(--green-tx);border:.5px solid var(--green);margin-top:0" onclick="gdSync(false)">🔄 Sincronizza ora</button>
+          <label class="tog" style="display:flex;align-items:center;justify-content:space-between;margin-top:9px;font-size:12px;color:var(--tx2)"><span>Sync automatico in background</span><input type="checkbox" id="gd-auto-tog" onchange="gdToggleAuto()"><span class="tog-sl"></span></label>
+          <button class="btn-exp" style="background:var(--amber-bg);color:var(--amber-tx);border:.5px solid var(--amber);margin-top:9px" onclick="gdDisconnect()">Disconnetti</button>
+        </div>
+      </div>
+
     </div>
     <div style="text-align:center;padding:18px 16px 8px;font-size:11px;color:var(--tx3)">NutriTrack v<span id="ver-lbl"></span> · Ale · GitHub Pages</div>
   </div>
@@ -1279,7 +1292,7 @@ a{color:var(--blue-tx)}
 
 <script>
 'use strict';
-const APP_VERSION = '3.1.2';
+const APP_VERSION = '3.2.0';
 const DATA_VERSION = 1; // increment when localStorage schema changes // sessione.feature.patch
 // ═══ CONSTANTS ═══════════════════════════════════════════
 const DAYS_IT=['Domenica','Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato'];
@@ -1916,13 +1929,22 @@ async function startScan(){
       status.textContent='📷 Apertura scanner…';
       try{
         const perm=await BS.requestPermissions();
-        if(perm.camera!=='granted'&&perm.camera!=='limited'){status.textContent='⚠ Permesso fotocamera negato.';return;}
+        if(perm.camera!=='granted'&&perm.camera!=='limited'){status.textContent='⚠ Permesso fotocamera negato. Attivalo in Impostazioni › App › NutriTrack › Permessi › Fotocamera.';return;}
+        if(typeof BS.isGoogleBarcodeScannerModuleAvailable==='function'){
+          try{
+            const mod=await BS.isGoogleBarcodeScannerModuleAvailable();
+            if(mod&&mod.available===false){status.textContent='⏳ Download modulo scanner…';await BS.installGoogleBarcodeScannerModule();}
+          }catch(_){}
+        }
+        status.textContent='📷 Inquadra il barcode';
         const res=await BS.scan();
         if(res&&res.barcodes&&res.barcodes.length){lookupBarcode(res.barcodes[0].rawValue);}
         else status.textContent='Scansione annullata.';
-      }catch(e){status.textContent='⚠ Errore scanner: '+(e.message||'').slice(0,40);}
+      }catch(e){status.textContent='⚠ Errore scanner: '+(((e&&e.message)||'sconosciuto')+'').slice(0,60);}
       return;
     }
+    status.textContent='⚠ Plugin scanner non disponibile. Esegui npx cap sync e ricompila l\u2019APK.';
+    return;
   }
   status.textContent='Attivazione fotocamera…';
   try{
@@ -3083,6 +3105,7 @@ function renderSettingsPage(){
   updateNotifStatus();
   const abt=document.getElementById('auto-backup-tog');
   if(abt) abt.checked=LS.get('nt_auto_backup',false);
+  gdRenderStatus();
   // restore smart notifs
   const sn=LS.get('nt_smart_notifs',{macroDone:false,protWarn:false,morning:false,morningTime:'07:30'});
   const el=id=>$(id);
@@ -3981,7 +4004,7 @@ function initCapacitor(){
   if(!isNative()) return;
   const App = capPlugin('App');
   if(App){
-    App.addListener('appStateChange', ({isActive}) => { if(!isActive) autoSave(); });
+    App.addListener('appStateChange', ({isActive}) => { if(!isActive){ autoSave(); if(LS.get('nt_gdrive_auto',false)&&LS.get('nt_gdrive_on',false)) gdSync(true); } });
     App.addListener('backButton', () => {
       const open = document.querySelector('.overlay.open, .c-overlay.open');
       if(open){ closeOl(open.id); return; }
@@ -3992,6 +4015,7 @@ function initCapacitor(){
   }
   const LN = capPlugin('LocalNotifications');
   if(LN){ try{ LN.requestPermissions(); }catch(e){} }
+  gdInit();
 }
 function nativeNotify(title, body, id){
   if(isNative()){
@@ -4003,6 +4027,110 @@ function nativeNotify(title, body, id){
   }
   return false;
 }
+
+// ═══ INFRA-1: Google Drive sync (solo native / APK) ══════
+// Auth: @codetrix-studio/capacitor-google-auth (scope drive.appdata, config in capacitor.config.json)
+// REST Drive via CapacitorHttp (evita CORS dalla WebView). File singolo in appDataFolder.
+// Merge: last-write-wins per giorno su savedAt; chiavi strutturali su savedAt del payload.
+const GD_FILE='nutritrack_sync.json';
+const GD_SKIP=new Set(['nt_gdrive_on','nt_gdrive_email','nt_gdrive_lastsync','nt_gdrive_device','nt_gdrive_auto']);
+function gdInit(){ try{ const GA=capPlugin('GoogleAuth'); if(GA&&GA.initialize) GA.initialize(); }catch(e){} }
+function gdDeviceId(){ let id=LS.get('nt_gdrive_device',null); if(!id){ id='d'+Math.random().toString(36).slice(2,10); LS.set('nt_gdrive_device',id); } return id; }
+function gdData(res){ if(!res) return null; const d=res.data; if(typeof d==='string'){ try{return JSON.parse(d);}catch(e){return null;} } return d; }
+async function gdApi(method,url,token,body){
+  const headers={ Authorization:'Bearer '+token };
+  if(body!=null) headers['Content-Type']='application/json';
+  const CH=capPlugin('CapacitorHttp');
+  if(CH){ const opt={ url, method, headers }; if(body!=null) opt.data=body; return await CH.request(opt); }
+  const r=await fetch(url,{method,headers,body: body!=null? JSON.stringify(body):undefined});
+  let data; const txt=await r.text(); try{data=JSON.parse(txt);}catch(e){data=txt;} return { status:r.status, data };
+}
+async function gdToken(){
+  const GA=capPlugin('GoogleAuth'); if(!GA) return null;
+  try{ const r=await GA.refresh(); if(r&&r.accessToken) return r.accessToken; }catch(e){}
+  try{ const u=await GA.signIn(); const t=(u&&u.authentication&&u.authentication.accessToken)||(u&&u.accessToken); if(t){ if(u.email) LS.set('nt_gdrive_email',u.email); return t; } }catch(e){}
+  return null;
+}
+async function gdFindFile(token){
+  const url='https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&fields='+encodeURIComponent('files(id,modifiedTime)')+'&q='+encodeURIComponent("name='"+GD_FILE+"'");
+  const d=gdData(await gdApi('GET',url,token,null)); const f=d&&d.files; return f&&f.length? f[0].id : null;
+}
+async function gdCreate(token){
+  const d=gdData(await gdApi('POST','https://www.googleapis.com/drive/v3/files',token,{name:GD_FILE,parents:['appDataFolder']}));
+  return d&&d.id;
+}
+async function gdUpdate(token,fileId,payload){
+  await gdApi('PATCH','https://www.googleapis.com/upload/drive/v3/files/'+fileId+'?uploadType=media',token,payload);
+}
+async function gdDownload(token,fileId){
+  return gdData(await gdApi('GET','https://www.googleapis.com/drive/v3/files/'+fileId+'?alt=media',token,null));
+}
+function gdCollect(){ const all={}; Object.keys(localStorage).filter(k=>k.startsWith('nt_')&&!GD_SKIP.has(k)).forEach(k=>{ all[k]=localStorage.getItem(k); }); return all; }
+function gdMerge(payload){
+  const data=(payload&&payload.data)||{}; let applied=0;
+  const remoteSavedAt=Date.parse((payload&&payload.savedAt)||'')||0;
+  const localLastSync=Date.parse(LS.get('nt_gdrive_lastsync','')||'')||0;
+  const dayRe=/^nt_\d{4}-\d{2}-\d{2}$/;
+  Object.keys(data).forEach(k=>{
+    if(GD_SKIP.has(k)) return;
+    const remoteRaw=data[k], localRaw=localStorage.getItem(k);
+    if(dayRe.test(k)){
+      let rs=0,ls=0;
+      try{ rs=Date.parse(JSON.parse(remoteRaw).savedAt)||0; }catch(e){}
+      try{ ls=localRaw?(Date.parse(JSON.parse(localRaw).savedAt)||0):0; }catch(e){}
+      if(!localRaw||rs>ls){ localStorage.setItem(k,remoteRaw); applied++; }
+    }else{
+      if(!localRaw||remoteSavedAt>localLastSync){ localStorage.setItem(k,remoteRaw); applied++; }
+    }
+  });
+  return applied;
+}
+async function gdSync(silent){
+  if(!isNative()){ if(!silent) toast('☁️ Sync Drive disponibile solo nell\'app Android'); return; }
+  const GA=capPlugin('GoogleAuth'); if(!GA){ if(!silent) toast('⚠ Plugin Google non disponibile (npx cap sync?)'); return; }
+  gdSetStatus('Sincronizzazione…');
+  try{
+    const token=await gdToken();
+    if(!token){ gdSetStatus('Connetti un account Google'); return; }
+    LS.set('nt_gdrive_on',true);
+    let fileId=await gdFindFile(token);
+    if(fileId){ const remote=await gdDownload(token,fileId); if(remote) gdMerge(remote); }
+    const payload={ v:1, savedAt:new Date().toISOString(), device:gdDeviceId(), data:gdCollect() };
+    if(!fileId) fileId=await gdCreate(token);
+    await gdUpdate(token,fileId,payload);
+    LS.set('nt_gdrive_lastsync',payload.savedAt);
+    favorites=LS.get('nt_favorites',[]); templates=LS.get('nt_templates',[]); checkins=LS.get('nt_checkins',[]); recipes=LS.get('nt_recipes',[]);
+    loadToday(); renderMeals(); updateTotals(); gdRenderStatus();
+    if(!silent) toast('✅ Sincronizzato con Google Drive');
+  }catch(e){ gdSetStatus('Errore: '+(((e&&e.message)||'sconosciuto')+'').slice(0,50)); if(!silent) toast('⚠ Sync fallito'); }
+}
+async function gdConnect(){
+  if(!isNative()){ toast('☁️ Disponibile solo nell\'app Android'); return; }
+  const GA=capPlugin('GoogleAuth'); if(!GA){ toast('⚠ Plugin Google non disponibile (npx cap sync?)'); return; }
+  gdSetStatus('Connessione…');
+  try{ const u=await GA.signIn(); if(u&&u.email) LS.set('nt_gdrive_email',u.email); LS.set('nt_gdrive_on',true); gdRenderStatus(); await gdSync(false); }
+  catch(e){ gdSetStatus('Connessione annullata'); }
+}
+async function gdDisconnect(){
+  const GA=capPlugin('GoogleAuth'); try{ if(GA) await GA.signOut(); }catch(e){}
+  LS.set('nt_gdrive_on',false); LS.del('nt_gdrive_email'); LS.del('nt_gdrive_lastsync'); gdRenderStatus();
+  toast('Disconnesso da Google Drive');
+}
+function gdToggleAuto(){ const t=document.getElementById('gd-auto-tog'); LS.set('nt_gdrive_auto', t?t.checked:false); }
+function gdSetStatus(txt){ const el=document.getElementById('gd-status'); if(el) el.textContent=txt; }
+function gdRenderStatus(){
+  const on=LS.get('nt_gdrive_on',false), email=LS.get('nt_gdrive_email',''), last=LS.get('nt_gdrive_lastsync',null);
+  const native=isNative();
+  const wrapConn=document.getElementById('gd-connected'), btnConn=document.getElementById('gd-btn-connect'), note=document.getElementById('gd-web-note');
+  if(note) note.style.display=native?'none':'block';
+  if(btnConn) btnConn.style.display=(native&&!on)?'block':'none';
+  if(wrapConn) wrapConn.style.display=(native&&on)?'block':'none';
+  const em=document.getElementById('gd-email'); if(em) em.textContent=email||'';
+  const at=document.getElementById('gd-auto-tog'); if(at) at.checked=LS.get('nt_gdrive_auto',false);
+  if(on){ gdSetStatus(last?('Ultimo sync: '+gdFmt(last)):'Connesso — nessun sync ancora'); }
+  else { gdSetStatus(native?'Non connesso':'Solo nell\'app Android'); }
+}
+function gdFmt(iso){ try{ const d=new Date(iso); return d.toLocaleDateString('it-IT')+' '+d.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'}); }catch(e){ return iso; } }
 
 // ═══ ARCH-3+4: Data versioning + migration engine ════════
 function runMigrations(fromVersion){

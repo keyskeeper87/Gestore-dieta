@@ -1279,7 +1279,7 @@ a{color:var(--blue-tx)}
 
 <script>
 'use strict';
-const APP_VERSION = '3.1.1';
+const APP_VERSION = '3.1.2';
 const DATA_VERSION = 1; // increment when localStorage schema changes // sessione.feature.patch
 // ═══ CONSTANTS ═══════════════════════════════════════════
 const DAYS_IT=['Domenica','Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato'];
@@ -3268,12 +3268,12 @@ function buildApiBody(prompt,imageB64,imageMime){
   if(apiMode==='gemini'){
     const parts=[{text:prompt}];
     if(imageB64)parts.unshift({inline_data:{mime_type:imageMime,data:imageB64}});
-    return JSON.stringify({contents:[{parts}]});
+    return JSON.stringify({contents:[{parts}],generationConfig:{maxOutputTokens:2048}});
   }
   const content=imageB64
     ?[{type:'image',source:{type:'base64',media_type:imageMime,data:imageB64}},{type:'text',text:prompt}]
     :prompt;
-  return JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content}]});
+  return JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:2048,messages:[{role:'user',content}]});
 }
 function extractApiText(data){
   // gemini diretto: candidates[].content.parts[].text
@@ -3324,8 +3324,9 @@ async function aiCall(body){
   return extractApiText(data);
 }
 function buildApiBodyShort(prompt,maxTokens){
-  if(apiMode==='gemini') return JSON.stringify({contents:[{parts:[{text:prompt}]}]});
-  return JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:maxTokens||400,messages:[{role:'user',content:prompt}]});
+  const mt=Math.max(maxTokens||400,1024);
+  if(apiMode==='gemini') return JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{maxOutputTokens:mt}});
+  return JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:mt,messages:[{role:'user',content:prompt}]});
 }
 async function testApi(){
   if(!hasApiAccess()){toast('⚠ Configura prima l\'API key o il proxy');return;}

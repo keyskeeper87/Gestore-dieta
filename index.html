@@ -635,6 +635,10 @@ a{color:var(--blue-tx)}
     </div>
     <div id="meso-list"></div>
   </div>
+  <div class="roll-section">
+    <div class="roll-section-ttl">🍽️ Alimenti più frequenti</div>
+    <div id="top-foods-list"></div>
+  </div>
 </div>
 
 <!-- PAGE: RECIPES -->
@@ -1275,7 +1279,7 @@ a{color:var(--blue-tx)}
 
 <script>
 'use strict';
-const APP_VERSION = '2.9.0';
+const APP_VERSION = '3.1.1';
 const DATA_VERSION = 1; // increment when localStorage schema changes // sessione.feature.patch
 // ═══ CONSTANTS ═══════════════════════════════════════════
 const DAYS_IT=['Domenica','Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato'];
@@ -1400,6 +1404,8 @@ const LS={
   get:(k,d=null)=>{try{const v=localStorage.getItem(k);return v===null?d:JSON.parse(v);}catch{return d;}},
   set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch{}},
   del:(k)=>{try{localStorage.removeItem(k);}catch{}},
+  // FIX-3: variante che propaga l'errore (per dati critici come il log giornaliero)
+  setSafe:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));return true;}catch(e){return false;}},
 };
 // ═══ STATE ════════════════════════════════════════════════
 let dayType='training';
@@ -1555,10 +1561,27 @@ function showPage(id){
 // ═══ DAY TYPE ═════════════════════════════════════════════
 function setDay(type,silent=false){dayType=type;applyTheme(activeTheme);renderHero();renderMeals();updateTotals();renderWaterBar();if(!silent)markUnsaved();}
 function pickDay(type){closeOl('ol-daypick');setDay(type);}
+function currentStreak(){
+  // Conta i giorni consecutivi (fino a ieri/oggi) con almeno l'85% del target kcal
+  const days=histDays();if(!days.length)return 0;
+  const tgt=targets();const dayMap={};days.forEach(d=>dayMap[d.date]=d);
+  let streak=0;const cur=new Date(today()+'T00:00:00');
+  // se oggi non ancora raggiunto, parte da ieri
+  for(let i=0;i<60;i++){
+    const ds=cur.toISOString().split('T')[0];
+    const data=dayMap[ds];
+    const hit=data&&dayTotals(data).k>=(tgt[data.dayType]?.kcal||2000)*.85;
+    if(hit){streak++;}
+    else if(i>0){break;} // oggi può non essere ancora completo, non rompe
+    cur.setDate(cur.getDate()-1);
+  }
+  return streak;
+}
 function renderHero(){
   const isRest=dayType==='rest';
   $('hero-icon').textContent=isRest?'🛌':'🏋️';
-  $('hero-title').textContent=isRest?'Rest Day':'Training Day';
+  const streak=currentStreak();
+  $('hero-title').textContent=(isRest?'Rest Day':'Training Day')+(streak>=3?' · 🔥'+streak:'');
   const t=targets()[dayType];
   $('hero-sub').textContent=`Target: ${t.kcal} kcal · P${t.p}g`;
   const ph=PHASES.find(p=>p.id===activePhase);
@@ -1886,7 +1909,22 @@ function addFavFromDB(){
 function clearDBPortion(){dbProd=null;const pp=$('db-portion'),sr=$('search-results');if(pp)pp.style.display='none';if(sr)sr.style.display='block';}
 // ── BARCODE ────────────────────────────────────────────────
 async function startScan(){
-  const status=$('barcode-status'),wrap=$('scan-wrap');status.textContent='Attivazione fotocamera…';
+  const status=$('barcode-status'),wrap=$('scan-wrap');
+  if(isNative()){
+    const BS=capPlugin('BarcodeScanner');
+    if(BS){
+      status.textContent='📷 Apertura scanner…';
+      try{
+        const perm=await BS.requestPermissions();
+        if(perm.camera!=='granted'&&perm.camera!=='limited'){status.textContent='⚠ Permesso fotocamera negato.';return;}
+        const res=await BS.scan();
+        if(res&&res.barcodes&&res.barcodes.length){lookupBarcode(res.barcodes[0].rawValue);}
+        else status.textContent='Scansione annullata.';
+      }catch(e){status.textContent='⚠ Errore scanner: '+(e.message||'').slice(0,40);}
+      return;
+    }
+  }
+  status.textContent='Attivazione fotocamera…';
   try{
     scanStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:1280},height:{ideal:720}}});
     $('scan-video').srcObject=scanStream;wrap.style.display='block';$('btn-stop-scan').style.display='block';$('btn-start-scan').style.display='none';
@@ -1953,10 +1991,10 @@ async function analyzePhoto(){
   const prompt=`Analizza questa immagine di cibo e identifica tutti gli alimenti visibili.\nPer ogni alimento, stima i valori nutrizionali PER LA PORZIONE VISIBILE.\nRispondi SOLO con JSON valido:\n{"items":[{"name":"Nome in italiano","estimated_grams":150,"confidence":"alta|media|bassa","kcal":245,"prot_g":18.5,"carb_g":12.0,"fat_g":8.5,"note":""}]}`;
   try{
     const res=await fetch(getApiEndpoint(),{method:'POST',headers:getApiHeaders(),body:buildApiBody(prompt,photoB64,photoMime)});
-    if(!res.ok)throw new Error('HTTP '+res.status);
+    if(!res.ok)throw new Error(res.status===429?'Limite richieste (429) — attendi 60s':res.status===503?'AI non disponibile (503) — riprova tra poco':res.status===401?'Auth fallita (401) — verifica la key':'Errore HTTP '+res.status);
     const data=await res.json(),text=extractApiText(data);
-    const m=text.match(/\{[\s\S]*\}/);if(!m)throw new Error('Risposta non valida');
-    renderAiResults(JSON.parse(m[0]).items||[]);
+    const parsed=extractJSON(text);if(!parsed)throw new Error('L\'AI non ha restituito dati validi. Riprova o riformula.');
+    renderAiResults(parsed.items||[]);
   }catch(e){$('ai-thinking').style.display='none';toast('⚠ Errore AI: '+(e.message||'').slice(0,50));}
 }
 function renderAiResults(items){
@@ -1994,10 +2032,9 @@ async function estimateMacros(){
   const prompt=`Sei un nutrizionista esperto. Stima i valori nutrizionali per: "${query}"\nRegole:\n- Se include quantità esplicita, stima PER QUELLA QUANTITÀ e usa estimated_g corrispondente\n- Altrimenti usa 100g come base\n- confidence: alta=alimento semplice noto, media=piatto comune, bassa=piatto elaborato\nRispondi SOLO con JSON valido:\n{"food_name":"Nome normalizzato italiano","estimated_g":100,"kcal_per_100g":165,"prot_per_100g":31.0,"carb_per_100g":0.0,"fat_per_100g":3.6,"confidence":"alta","note":""}`;
   try{
     const res=await fetch(getApiEndpoint(),{method:'POST',headers:getApiHeaders(),body:buildApiBodyShort(prompt,400)});
-    if(!res.ok)throw new Error('HTTP '+res.status);
+    if(!res.ok)throw new Error(res.status===429?'Limite richieste (429) — attendi 60s':res.status===503?'AI non disponibile (503) — riprova tra poco':res.status===401?'Auth fallita (401) — verifica la key':'Errore HTTP '+res.status);
     const data=await res.json(),text=extractApiText(data);
-    const m=text.match(/\{[\s\S]*?\}/);if(!m)throw new Error('Risposta non valida');
-    const est=JSON.parse(m[0]);
+    const est=extractJSON(text);if(!est)throw new Error('L\'AI non ha restituito dati validi. Riprova.');
     aieBase={name:est.food_name,kp:(est.kcal_per_100g||0)/100,pp:(est.prot_per_100g||0)/100,cp:(est.carb_per_100g||0)/100,fp:(est.fat_per_100g||0)/100,conf:est.confidence||'media',note:est.note||''};
     const g=est.estimated_g||100;
     $('ai-est-food-name').textContent=est.food_name;
@@ -2029,10 +2066,9 @@ async function estimateManual(){
 Rispondi SOLO con JSON: {"kcal":0,"prot_g":0,"carb_g":0,"fat_g":0}`;
   try{
     const res=await fetch(getApiEndpoint(),{method:'POST',headers:getApiHeaders(),body:buildApiBodyShort(prompt,100)});
-    if(!res.ok)throw new Error('HTTP '+res.status);
+    if(!res.ok)throw new Error(res.status===429?'Limite richieste (429) — attendi 60s':res.status===503?'AI non disponibile (503) — riprova tra poco':res.status===401?'Auth fallita (401) — verifica la key':'Errore HTTP '+res.status);
     const data=await res.json(),text=extractApiText(data);
-    const m=text.match(/\{[\s\S]*?\}/);if(!m)throw new Error('no json');
-    const est=JSON.parse(m[0]);
+    const est=extractJSON(text);if(!est)throw new Error('L\'AI non ha restituito dati validi.');
     $('m-kcal').value=Math.round(est.kcal||0);$('m-prot').value=r1(est.prot_g||0);
     $('m-carb').value=r1(est.carb_g||0);$('m-fat').value=r1(est.fat_g||0);
     toast('✓ Macro stimati per 100g');
@@ -2084,11 +2120,11 @@ Rispondi SOLO con JSON valido:
 {"items":[{"name":"Nome alimento con quantità","qty_g":100,"kcal":150,"prot_g":10.0,"carb_g":15.0,"fat_g":5.0,"confidence":"alta|media|bassa"}]}`;
   try{
     const res = await fetch(getApiEndpoint(), {method:'POST', headers:getApiHeaders(), body:buildApiBodyShort(prompt, 600)});
-    if(!res.ok) throw new Error('HTTP ' + res.status);
+    if(!res.ok) throw new Error(res.status===429?'Limite richieste (429) — attendi 60s':res.status===503?'AI non disponibile (503) — riprova tra poco':res.status===401?'Auth fallita (401) — verifica la key':'Errore HTTP '+res.status);
     const data = await res.json(), text = extractApiText(data);
-    const m = text.match(/\{[\s\S]*\}/);
-    if(!m) throw new Error('Risposta non valida');
-    _qaItems = JSON.parse(m[0]).items || [];
+    const parsed = extractJSON(text);
+    if(!parsed) throw new Error('L\'AI non ha restituito dati validi. Riprova o riformula il testo.');
+    _qaItems = parsed.items || [];
     renderQuickAddResults();
   } catch(e){
     toast('⚠ Errore: ' + (e.message||'').slice(0,50), 'error');
@@ -2145,10 +2181,10 @@ async function genMealSuggestion(mealKey){
   const prompt=`Sei un nutrizionista. Devo ancora mangiare al pasto "${MEAL_LABELS[mealKey]}" e mi restano questi macro:\nKcal: ${remKcal} · Proteine: ${r1(t.p-tP)}g · Carbo: ${r1(t.c-tC)}g · Grassi: ${r1(t.f-tF)}g\nTipo giornata: ${dayType==='training'?'Training':'Rest'}\n${planList?'Alimenti del piano: '+planList:''}\n${favNames?'Miei preferiti: '+favNames:''}\nSuggerisci 3-5 alimenti concreti.\nRispondi SOLO con JSON:\n{"suggestion_title":"Titolo breve","items":[{"name":"Nome","qty_g":100,"kcal":200,"prot_g":20,"carb_g":15,"fat_g":5}],"total":{"kcal":0,"prot_g":0,"carb_g":0,"fat_g":0},"note":""}`;
   try{
     const res=await fetch(getApiEndpoint(),{method:'POST',headers:getApiHeaders(),body:buildApiBodyShort(prompt,800)});
-    if(!res.ok)throw new Error('HTTP '+res.status);
+    if(!res.ok)throw new Error(res.status===429?'Limite richieste (429) — attendi 60s':res.status===503?'AI non disponibile (503) — riprova tra poco':res.status===401?'Auth fallita (401) — verifica la key':'Errore HTTP '+res.status);
     const data=await res.json(),text=extractApiText(data);
-    const m=text.match(/\{[\s\S]*\}/);if(!m)throw new Error('Risposta non valida');
-    renderGenSuggestion(el,mealKey,JSON.parse(m[0]));
+    const parsed=extractJSON(text);if(!parsed)throw new Error('L\'AI non ha restituito dati validi.');
+    renderGenSuggestion(el,mealKey,parsed);
   }catch(e){el.innerHTML=`<div style="font-size:12px;color:var(--red-tx);padding:7px 0">⚠ Errore: ${esc((e.message||'').slice(0,60))}</div>`;}
 }
 function renderGenSuggestion(el,mealKey,sug){
@@ -2169,7 +2205,8 @@ function addGenItems(mealKey,itemsStr){
 // ═══ SAVE / LOAD ══════════════════════════════════════════
 function saveDay(){
   if(!Object.values(logged).flat().length){toast('⚠ Nessun alimento da salvare','error');return;}
-  LS.set('nt_'+today(),{date:today(),dayType,logged,notes:mealNotes,dayNote,planId:activePlanId,savedAt:new Date().toISOString()});
+  const ok=LS.setSafe('nt_'+today(),{date:today(),dayType,logged,notes:mealNotes,dayNote,planId:activePlanId,savedAt:new Date().toISOString()});
+  if(!ok){toast('⚠ Memoria piena — salvataggio fallito. Esporta un backup e libera spazio.','error');vib([80,40,80]);return;}
   pruneOld();clearUnsaved();showSummary();vib([40,30,40]);
 }
 function resetDay(){
@@ -2190,9 +2227,11 @@ function autoSave(){
   if(!Object.values(logged).flat().length)return;
   LS.set('nt_'+today(),{date:today(),dayType,logged,notes:mealNotes,dayNote,planId:activePlanId,savedAt:new Date().toISOString(),auto:true});
 }
-setInterval(autoSave,30000);
-window.addEventListener('visibilitychange',()=>{if(document.hidden)autoSave();});
-window.addEventListener('beforeunload',autoSave);
+if(!isNative()){
+  setInterval(autoSave,30000);
+  window.addEventListener('visibilitychange',()=>{if(document.hidden)autoSave();});
+  window.addEventListener('beforeunload',autoSave);
+}
 // ── UX-V: Copia singolo pasto da giorno precedente ───────
 function copyMealFromYesterday(mealKey){
   const days=histDays().filter(d=>d.date<today());
@@ -2628,11 +2667,39 @@ function renderMesoList(){
     </div>`;
   }).join('');
 }
+// DATA-7: Top alimenti per frequenza
+function renderTopFoods(){
+  const el=document.getElementById('top-foods-list');if(!el)return;
+  const days=histDays();
+  if(days.length<3){el.innerHTML='<div style="font-size:12px;color:var(--tx2)">Servono almeno 3 giorni di storico.</div>';return;}
+  // Aggrega per nome normalizzato (senza grammatura)
+  const agg={};
+  days.forEach(d=>Object.values(d.logged||{}).flat().forEach(i=>{
+    const base=i.n.replace(/\d+\s*g/i,'').trim();
+    if(!base)return;
+    if(!agg[base])agg[base]={n:base,count:0,kSum:0,pSum:0};
+    agg[base].count++;agg[base].kSum+=i.k||0;agg[base].pSum+=i.p||0;
+  }));
+  const top=Object.values(agg).sort((a,b)=>b.count-a.count).slice(0,10);
+  if(!top.length){el.innerHTML='<div style="font-size:12px;color:var(--tx2)">Nessun dato.</div>';return;}
+  const maxCount=top[0].count;
+  el.innerHTML=top.map((f,idx)=>{
+    const avgK=Math.round(f.kSum/f.count),avgP=r1(f.pSum/f.count);
+    const pct=Math.round(f.count/maxCount*100);
+    return`<div style="padding:6px 0;border-bottom:.5px solid var(--br)">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px">
+        <span style="font-size:12px;font-weight:600">${idx+1}. ${esc(f.n)}</span>
+        <span style="font-size:11px;color:var(--tx2)">${f.count}× · ${avgK} kcal · P${avgP}g</span>
+      </div>
+      <div style="height:4px;background:var(--sf2);border-radius:2px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--da);border-radius:2px"></div></div>
+    </div>`;
+  }).join('');
+}
 function setRollRange(n){rollRange=n;document.querySelectorAll('.roll-chip').forEach(c=>c.classList.toggle('active',c.id==='roll-'+n));renderRollingPage();}
 function renderRollingPage(){
   const days=histDays().slice(0,rollRange).reverse();
   renderRollKPI(days);renderMovingAvg(days);renderStackedBars(days);renderCompliance(days);renderStreak(days);
-  renderWeeklyBalance();renderMacroDist(days);renderMesoList();
+  renderWeeklyBalance();renderMacroDist(days);renderMesoList();renderTopFoods();
 }
 function renderMacroDist(days){
   const el=document.getElementById('macro-dist-wrap');if(!el)return;
@@ -3090,7 +3157,7 @@ function scheduleNotif(){
   fire.setHours(h,m,0,0);if(fire<=now)fire.setDate(fire.getDate()+1);
   window._nt=setTimeout(()=>{
     const saved=LS.get('nt_'+today(),null),hasItems=saved&&Object.values(saved.logged||{}).flat().length>0;
-    if(!hasItems){try{new Notification('🥗 NutriTrack',{body:'Non hai ancora loggato i pasti di oggi!',icon:'icon-192.png',tag:'nutritrack',renotify:true});updateNotifBadge(true);}catch{}}
+    if(!hasItems){if(!nativeNotify('🥗 NutriTrack','Non hai ancora loggato i pasti di oggi!',1001)){try{new Notification('🥗 NutriTrack',{body:'Non hai ancora loggato i pasti di oggi!',icon:'icon-192.png',tag:'nutritrack',renotify:true});}catch{}}updateNotifBadge(true);}
     scheduleNotif();
   },fire-now);
 }
@@ -3140,7 +3207,7 @@ function scheduleSmartNotifs(){
   fire.setHours(h,m,0,0);if(fire<=now)fire.setDate(fire.getDate()+1);
   window._nt_morning=setTimeout(()=>{
     const type=calendar[new Date().getDay()]||'training',t=targets()[type];
-    try{new Notification('☀️ NutriTrack — Buongiorno!',{body:`Oggi è un giorno ${type==='training'?'Training 🏋️':'Rest 🛌'}. Target: ${t.kcal} kcal · P${t.p}g`,icon:'icon-192.png',tag:'nt-morning'});}catch{}
+    if(!nativeNotify('☀️ NutriTrack — Buongiorno!',`Oggi è un giorno ${type==='training'?'Training 🏋️':'Rest 🛌'}. Target: ${t.kcal} kcal · P${t.p}g`,1002)){try{new Notification('☀️ NutriTrack — Buongiorno!',{body:`Oggi è un giorno ${type==='training'?'Training 🏋️':'Rest 🛌'}. Target: ${t.kcal} kcal · P${t.p}g`,icon:'icon-192.png',tag:'nt-morning'});}catch{}}
     scheduleSmartNotifs();
   },fire-now);
 }
@@ -3152,13 +3219,13 @@ function checkSmartNotifs(){
   const t=targets()[saved.dayType||dayType],h=new Date().getHours();
   if(smartNotifs.macroDone&&tK>0&&tK/t.kcal>=0.9&&tK/t.kcal<1.05){
     if(!LS.get('nt_notif_macro_done_'+today(),false)){
-      try{new Notification('🎯 NutriTrack',{body:`Quasi al target! ${Math.round(tK)}/${t.kcal} kcal`,icon:'icon-192.png',tag:'nt-macro-done'});}catch{}
+      if(!nativeNotify('🎯 NutriTrack',`Quasi al target! ${Math.round(tK)}/${t.kcal} kcal`,1003)){try{new Notification('🎯 NutriTrack',{body:`Quasi al target! ${Math.round(tK)}/${t.kcal} kcal`,icon:'icon-192.png',tag:'nt-macro-done'});}catch{}}
       LS.set('nt_notif_macro_done_'+today(),true);
     }
   }
   if(smartNotifs.protWarn&&h>=12&&h<=14&&tP<t.p*0.4){
     if(!LS.get('nt_notif_prot_'+today(),false)){
-      try{new Notification('⚠️ NutriTrack — Proteine basse',{body:`Solo ${Math.round(tP)}g di proteine su ${t.p}g target.`,icon:'icon-192.png',tag:'nt-prot-warn'});}catch{}
+      if(!nativeNotify('⚠️ NutriTrack — Proteine basse',`Solo ${Math.round(tP)}g di proteine su ${t.p}g target.`,1004)){try{new Notification('⚠️ NutriTrack — Proteine basse',{body:`Solo ${Math.round(tP)}g di proteine su ${t.p}g target.`,icon:'icon-192.png',tag:'nt-prot-warn'});}catch{}}
       LS.set('nt_notif_prot_'+today(),true);
     }
   }
@@ -3170,7 +3237,7 @@ function checkSmartNotifs(){
       const emptyMeals=MEAL_KEYS.filter(k=>!(savedDay?.logged[k]?.length));
       if(emptyMeals.length>=2){
         const names=emptyMeals.map(k=>MEAL_LABELS[k].replace(/^.+? /,'')).join(', ');
-        try{new Notification('🍽️ NutriTrack — Pasti mancanti',{body:`Non hai ancora loggato: ${names}`,icon:'icon-192.png',tag:'nt-meals-incomplete'});}catch{}
+        if(!nativeNotify('🍽️ NutriTrack — Pasti mancanti',`Non hai ancora loggato: ${names}`,1005)){try{new Notification('🍽️ NutriTrack — Pasti mancanti',{body:`Non hai ancora loggato: ${names}`,icon:'icon-192.png',tag:'nt-meals-incomplete'});}catch{}}
         LS.set('nt_notif_meals_'+today(),true);
         updateNotifBadge(true);
       }
@@ -3209,8 +3276,52 @@ function buildApiBody(prompt,imageB64,imageMime){
   return JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content}]});
 }
 function extractApiText(data){
-  if(apiMode==='gemini') return data.candidates?.[0]?.content?.parts?.[0]?.text||'';
-  return data.content?.find(b=>b.type==='text')?.text||'';
+  // gemini diretto: candidates[].content.parts[].text
+  if(apiMode==='gemini') return data?.candidates?.[0]?.content?.parts?.[0]?.text||'';
+  // direct/proxy: formato Anthropic content[].text (il proxy riconverte già da Gemini)
+  if(Array.isArray(data?.content)) return data.content.filter(b=>b.type==='text').map(b=>b.text).join('')||'';
+  // fallback: a volte arriva comunque il formato gemini (es. proxy mal configurato)
+  if(data?.candidates) return data.candidates?.[0]?.content?.parts?.[0]?.text||'';
+  return '';
+}
+// Estrae un oggetto JSON dal testo AI, gestendo backtick markdown e testo extra
+function extractJSON(text){
+  if(!text) return null;
+  let t=text.trim();
+  // rimuove blocchi markdown ```json ... ``` o ``` ... ```
+  t=t.replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/,'');
+  // prova il parse diretto
+  try{ return JSON.parse(t); }catch{}
+  // altrimenti isola il primo {...} o [...] bilanciato
+  const objM=t.match(/\{[\s\S]*\}/);
+  if(objM){ try{ return JSON.parse(objM[0]); }catch{} }
+  const arrM=t.match(/\[[\s\S]*\]/);
+  if(arrM){ try{ return JSON.parse(arrM[0]); }catch{} }
+  return null;
+}
+// Wrapper unico per le chiamate AI: gestisce errori HTTP con messaggi chiari
+async function aiCall(body){
+  if(!hasApiAccess()) throw new Error('API non configurata');
+  let res;
+  try{
+    res=await fetch(getApiEndpoint(),{method:'POST',headers:getApiHeaders(),body});
+  }catch(e){
+    throw new Error('Connessione fallita — verifica rete o proxy');
+  }
+  if(!res.ok){
+    let detail='';
+    try{ const ed=await res.json(); detail=ed?.error?.message||''; }catch{}
+    const map={
+      429:'Limite richieste raggiunto (429) — attendi 60s o cambia provider',
+      503:'Servizio AI momentaneamente non disponibile (503) — riprova tra poco',
+      500:'Errore interno del provider AI (500) — riprova',
+      401:'Autenticazione fallita (401) — verifica la API key',
+      400:'Richiesta non valida (400)'+(detail?': '+detail.slice(0,60):'')
+    };
+    throw new Error(map[res.status]||('Errore HTTP '+res.status+(detail?': '+detail.slice(0,50):'')));
+  }
+  const data=await res.json();
+  return extractApiText(data);
 }
 function buildApiBodyShort(prompt,maxTokens){
   if(apiMode==='gemini') return JSON.stringify({contents:[{parts:[{text:prompt}]}]});
@@ -3310,7 +3421,7 @@ Fornisci:
 Sii diretto, specifico e motivante. Massimo 120 parole.`;
   try{
     const res=await fetch(getApiEndpoint(),{method:'POST',headers:getApiHeaders(),body:buildApiBodyShort(prompt,300)});
-    if(!res.ok)throw new Error('HTTP '+res.status);
+    if(!res.ok)throw new Error(res.status===429?'Limite richieste (429) — attendi 60s':res.status===503?'AI non disponibile (503) — riprova tra poco':res.status===401?'Auth fallita (401) — verifica la key':'Errore HTTP '+res.status);
     const data=await res.json(),text=extractApiText(data);
     wrap.innerHTML=text.trim()||'Nessuna risposta ricevuta.';
   }catch(e){wrap.innerHTML=`<span style="color:var(--red-tx)">⚠ Errore: ${esc((e.message||'').slice(0,60))}</span>`;}
@@ -3418,6 +3529,14 @@ function updateOfflineStatus(){
   info.textContent=`${cacheN} alimenti in cache locale`;
   list.textContent=cacheN?Object.values(foodCache).slice(0,8).map(p=>p.product_name||p.n||'?').join(' · ')+(cacheN>8?` + altri ${cacheN-8}`:''):'Cache vuota';
 }
+// FIX-2: cap nt_food_cache a 300 voci con eviction FIFO (le voci più vecchie escono)
+function capFoodCache(max){
+  max=max||300;
+  const keys=Object.keys(foodCache);
+  if(keys.length<=max)return;
+  // rimuove le voci in eccesso dall'inizio (inserite per prime)
+  keys.slice(0,keys.length-max).forEach(k=>{delete foodCache[k];});
+}
 async function cacheTopFoods(){
   if(!navigator.onLine){toast('⚠ Nessuna connessione');return;}
   toast('📥 Download in corso…');
@@ -3425,14 +3544,14 @@ async function cacheTopFoods(){
   const names=[...new Set(items.map(i=>i.n.replace(/\d+\s*g/i,'').trim()))].slice(0,30);
   let cached=0;
   names.forEach(name=>{if(!foodCache[name]){foodCache[name]={product_name:name,n:name,k:items.find(i=>i.n.includes(name))?.k||0,_cached:true};cached++;}});
-  LS.set('nt_food_cache',foodCache);updateOfflineStatus();toast(`✅ ${cached} alimenti aggiunti alla cache`);
+  capFoodCache();LS.set('nt_food_cache',foodCache);updateOfflineStatus();toast(`✅ ${cached} alimenti aggiunti alla cache`);
 }
 async function cachePlanFoods(){
   if(!navigator.onLine){toast('⚠ Nessuna connessione');return;}
   const pm=activePlan().meals;let cached=0;
   ['training','rest'].forEach(type=>Object.values(pm[type]||{}).flat().forEach(f=>{if(!foodCache[f.n]){foodCache[f.n]={...f,_cached:true};cached++;}}));
   favorites.forEach(f=>{if(!foodCache[f.n]){foodCache[f.n]={...f,_cached:true};cached++;}});
-  LS.set('nt_food_cache',foodCache);updateOfflineStatus();toast(`✅ ${cached} alimenti in cache`);
+  capFoodCache();LS.set('nt_food_cache',foodCache);updateOfflineStatus();toast(`✅ ${cached} alimenti in cache`);
 }
 function clearFoodCache(){if(!confirm('Svuotare la cache alimenti offline?'))return;foodCache={};LS.set('nt_food_cache',foodCache);updateOfflineStatus();toast('Cache svuotata');}
 window.addEventListener('online',()=>{updateOfflineStatus();toast('✅ Connessione ripristinata');});
@@ -3633,10 +3752,9 @@ async function estimateIngredient(){
   const prompt=`Stima i valori nutrizionali per ${g}g di "${name}".\nRispondi SOLO con JSON: {"kcal":0,"prot_g":0,"carb_g":0,"fat_g":0}`;
   try{
     const res=await fetch(getApiEndpoint(),{method:'POST',headers:getApiHeaders(),body:buildApiBodyShort(prompt,100)});
-    if(!res.ok)throw new Error('HTTP '+res.status);
+    if(!res.ok)throw new Error(res.status===429?'Limite richieste (429) — attendi 60s':res.status===503?'AI non disponibile (503) — riprova tra poco':res.status===401?'Auth fallita (401) — verifica la key':'Errore HTTP '+res.status);
     const data=await res.json(),text=extractApiText(data);
-    const m=text.match(/\{[\s\S]*?\}/);if(!m)throw new Error('no json');
-    const est=JSON.parse(m[0]);
+    const est=extractJSON(text);if(!est)throw new Error('L\'AI non ha restituito dati validi.');
     $('rb-ing-kcal').value=Math.round(est.kcal||0);$('rb-ing-p').value=r1(est.prot_g||0);$('rb-ing-c').value=r1(est.carb_g||0);$('rb-ing-f').value=r1(est.fat_g||0);
     toast('✓ Macro stimati');
   }catch{toast('⚠ Stima fallita');}
@@ -3855,6 +3973,36 @@ window.addEventListener('appinstalled',()=>{$('install-btn').style.display='none
 function installApp(){if(deferredInstall){deferredInstall.prompt();deferredInstall=null;}}
 if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 // ═══ INIT ═════════════════════════════════════════════════
+// ═══ INFRA-2: Capacitor native integration ══════════════
+function isNative(){ return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()); }
+function capPlugin(name){ return window.Capacitor && window.Capacitor.Plugins ? window.Capacitor.Plugins[name] : null; }
+function initCapacitor(){
+  if(!isNative()) return;
+  const App = capPlugin('App');
+  if(App){
+    App.addListener('appStateChange', ({isActive}) => { if(!isActive) autoSave(); });
+    App.addListener('backButton', () => {
+      const open = document.querySelector('.overlay.open, .c-overlay.open');
+      if(open){ closeOl(open.id); return; }
+      const activePage = document.querySelector('.page.active');
+      if(activePage && activePage.id !== 'page-log'){ showPage('log'); return; }
+      App.minimizeApp();
+    });
+  }
+  const LN = capPlugin('LocalNotifications');
+  if(LN){ try{ LN.requestPermissions(); }catch(e){} }
+}
+function nativeNotify(title, body, id){
+  if(isNative()){
+    const LN = capPlugin('LocalNotifications');
+    if(LN){
+      try{ LN.schedule({ notifications: [{ title, body, id: id||Math.floor(Math.random()*100000) }] }); }catch(e){}
+      return true;
+    }
+  }
+  return false;
+}
+
 // ═══ ARCH-3+4: Data versioning + migration engine ════════
 function runMigrations(fromVersion){
   // v0 → v1: add mealKey field to favorites that don't have it (no-op, already optional)
@@ -3881,6 +4029,7 @@ function runMigrations(fromVersion){
   if(saved){logged=saved.logged||logged;dayType=saved.dayType||'training';mealNotes=saved.notes||mealNotes;}
   else{const ct=calendar[todayDow()];if(ct)dayType=ct;}
   loadCustomPlans();
+  initCapacitor();
   // Run data migrations
   const _meta=LS.get('nt_meta',{version:0});
   if(_meta.version<DATA_VERSION){runMigrations(_meta.version);LS.set('nt_meta',{version:DATA_VERSION});}

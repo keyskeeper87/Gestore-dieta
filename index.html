@@ -934,6 +934,24 @@ a{color:var(--blue-tx)}
           <button class="btn-exp" style="background:var(--amber-bg);color:var(--amber-tx);border:.5px solid var(--amber);margin-top:9px" onclick="gdDisconnect()">Disconnetti</button>
         </div>
       </div>
+      <div style="border-top:.5px solid var(--br);margin-top:11px;padding-top:11px">
+        <div style="font-size:10px;font-weight:700;color:var(--tx3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:7px">⚕️ Health Connect</div>
+        <div id="hc-status" style="font-size:12px;color:var(--tx2);margin-bottom:8px">Solo nell'app Android</div>
+        <div id="hc-web-note" style="font-size:11px;color:var(--tx3);background:var(--bg2);border-radius:var(--r8);padding:7px 10px;margin-bottom:7px;display:none">Importa il peso (Fitdays) ed energia/passi (HEVY) da Health Connect. Solo nell'app Android.</div>
+        <button id="hc-btn-connect" class="btn-exp" style="background:var(--green-bg);color:var(--green-tx);border:.5px solid var(--green);margin-top:0;display:none" onclick="hcConnect()">⚕️ Collega Health Connect</button>
+        <div id="hc-connected" style="display:none">
+          <div id="hc-today" style="font-size:11px;color:var(--tx3);margin-bottom:7px"></div>
+          <button class="btn-exp" style="background:var(--green-bg);color:var(--green-tx);border:.5px solid var(--green);margin-top:0" onclick="hcImportWeight(false)">⚖️ Importa peso ora</button>
+          <label class="tog" style="display:flex;align-items:center;justify-content:space-between;margin-top:9px;font-size:12px;color:var(--tx2)"><span>Import automatico all'apertura</span><input type="checkbox" id="hc-auto-tog" onchange="hcToggleAuto()"><span class="tog-sl"></span></label>
+          <div id="hc-export-last" style="font-size:11px;color:var(--tx3);margin:9px 0 0"></div>
+          <button class="btn-exp" style="background:var(--green-bg);color:var(--green-tx);border:.5px solid var(--green);margin-top:7px" onclick="hcExportDay(null,false)">⬆️ Esporta oggi su Health Connect</button>
+          <label class="tog" style="display:flex;align-items:center;justify-content:space-between;margin-top:9px;font-size:12px;color:var(--tx2)"><span>Esporta automaticamente al salvataggio</span><input type="checkbox" id="hc-export-tog" onchange="hcExportToggle()"><span class="tog-sl"></span></label>
+
+          <button class="btn-exp" style="background:var(--bg2);color:var(--tx2);border:.5px solid var(--br2);margin-top:9px" onclick="hcOpenSettings()">Gestisci permessi in Health Connect</button>
+          <button class="btn-exp" style="background:var(--amber-bg);color:var(--amber-tx);border:.5px solid var(--amber);margin-top:9px" onclick="hcDisconnect()">Scollega</button>
+        </div>
+      </div>
+
 
     </div>
     <div style="text-align:center;padding:18px 16px 8px;font-size:11px;color:var(--tx3)">NutriTrack v<span id="ver-lbl"></span> · Ale · GitHub Pages</div>
@@ -1292,7 +1310,7 @@ a{color:var(--blue-tx)}
 
 <script>
 'use strict';
-const APP_VERSION = '3.2.0';
+const APP_VERSION = '3.4.0';
 const DATA_VERSION = 1; // increment when localStorage schema changes // sessione.feature.patch
 // ═══ CONSTANTS ═══════════════════════════════════════════
 const DAYS_IT=['Domenica','Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato'];
@@ -2230,6 +2248,7 @@ function saveDay(){
   const ok=LS.setSafe('nt_'+today(),{date:today(),dayType,logged,notes:mealNotes,dayNote,planId:activePlanId,savedAt:new Date().toISOString()});
   if(!ok){toast('⚠ Memoria piena — salvataggio fallito. Esporta un backup e libera spazio.','error');vib([80,40,80]);return;}
   pruneOld();clearUnsaved();showSummary();vib([40,30,40]);
+  if(LS.get('nt_hc_export',false)) hcExportDay(today(),true);
 }
 function resetDay(){
   if(!confirm('Azzeri tutti gli alimenti loggati oggi?'))return;
@@ -3106,6 +3125,7 @@ function renderSettingsPage(){
   const abt=document.getElementById('auto-backup-tog');
   if(abt) abt.checked=LS.get('nt_auto_backup',false);
   gdRenderStatus();
+  hcRenderStatus();
   // restore smart notifs
   const sn=LS.get('nt_smart_notifs',{macroDone:false,protWarn:false,morning:false,morningTime:'07:30'});
   const el=id=>$(id);
@@ -4004,7 +4024,7 @@ function initCapacitor(){
   if(!isNative()) return;
   const App = capPlugin('App');
   if(App){
-    App.addListener('appStateChange', ({isActive}) => { if(!isActive){ autoSave(); if(LS.get('nt_gdrive_auto',false)&&LS.get('nt_gdrive_on',false)) gdSync(true); } });
+    App.addListener('appStateChange', ({isActive}) => { if(!isActive){ autoSave(); if(LS.get('nt_gdrive_auto',false)&&LS.get('nt_gdrive_on',false)) gdSync(true); } else { if(LS.get('nt_hc_auto',false)&&LS.get('nt_hc_on',false)){ hcImportWeight(true); hcToday(); } } });
     App.addListener('backButton', () => {
       const open = document.querySelector('.overlay.open, .c-overlay.open');
       if(open){ closeOl(open.id); return; }
@@ -4016,6 +4036,7 @@ function initCapacitor(){
   const LN = capPlugin('LocalNotifications');
   if(LN){ try{ LN.requestPermissions(); }catch(e){} }
   gdInit();
+  hcAutoOnLaunch();
 }
 function nativeNotify(title, body, id){
   if(isNative()){
@@ -4131,6 +4152,93 @@ function gdRenderStatus(){
   else { gdSetStatus(native?'Non connesso':'Solo nell\'app Android'); }
 }
 function gdFmt(iso){ try{ const d=new Date(iso); return d.toLocaleDateString('it-IT')+' '+d.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'}); }catch(e){ return iso; } }
+
+
+// ═══ INFRA-3/6: Health Connect (peso Fitdays + energia/passi HEVY) — native ══
+// Plugin: @capgo/capacitor-health (major = major Capacitor; su Cap 6 usa v6).
+// API stabile su v6/v7/v8: isAvailable / requestAuthorization / readSamples / queryAggregated.
+// Read-only: peso → check-in; energia attiva + passi oggi → display. Non modifica i target.
+function hcSetStatus(t){ const el=document.getElementById('hc-status'); if(el) el.textContent=t; }
+async function hcImportWeight(silent){
+  if(!isNative()){ if(!silent) toast('\u2696\ufe0f Import peso disponibile solo nell\'app Android'); return; }
+  const H=capPlugin('Health'); if(!H){ if(!silent) toast('\u26a0 Plugin Health non disponibile (npx cap sync?)'); return; }
+  hcSetStatus('Import peso\u2026');
+  try{
+    const end=new Date(), start=new Date(Date.now()-90*864e5);
+    const r=await H.readSamples({ dataType:'weight', startDate:start.toISOString(), endDate:end.toISOString() });
+    const samples=(r&&r.samples)||[];
+    if(!samples.length){ hcSetStatus('Nessun dato peso in Health Connect'); if(!silent) toast('Nessun peso trovato'); return; }
+    let added=0,updated=0;
+    samples.forEach(s=>{
+      const raw=(s.value!=null?s.value:s.quantity); const kg=Math.round((raw||0)*10)/10;
+      if(!kg||kg<30||kg>300) return;
+      const d=((s.startDate||s.endDate||'')+'').slice(0,10); if(d.length!==10) return;
+      const ex=checkins.find(c=>c.date===d);
+      if(ex){ if(ex.weight!==kg){ ex.weight=kg; updated++; } }
+      else { checkins.push({date:d,weight:kg,fat:null,muscle:null,water:null,note:null}); added++; }
+    });
+    checkins.sort((a,b)=>b.date.localeCompare(a.date)); LS.set('nt_checkins',checkins);
+    LS.set('nt_hc_lastimport', new Date().toISOString());
+    if(typeof renderBodyPage==='function') renderBodyPage();
+    hcRenderStatus();
+    if(!silent) toast('\u2696\ufe0f Peso: +'+added+' nuovi, '+updated+' aggiornati');
+  }catch(e){ hcSetStatus('Errore: '+(((e&&e.message)||'sconosciuto')+'').slice(0,50)); if(!silent) toast('\u26a0 Import fallito'); }
+}
+async function hcToday(){
+  if(!isNative()) return; const H=capPlugin('Health'); if(!H) return;
+  try{
+    const d=new Date(); const s=new Date(d.getFullYear(),d.getMonth(),d.getDate()).toISOString(), e=d.toISOString();
+    let kcal=0, steps=0;
+    try{ const rc=await H.queryAggregated({dataType:'calories',startDate:s,endDate:e,bucket:'day'}); ((rc&&rc.samples)||[]).forEach(x=>{ kcal+=(x.value||0); }); }catch(_){}
+    try{ const rs=await H.queryAggregated({dataType:'steps',startDate:s,endDate:e,bucket:'day'}); ((rs&&rs.samples)||[]).forEach(x=>{ steps+=(x.value||0); }); }catch(_){}
+    const el=document.getElementById('hc-today'); if(el) el.textContent='Oggi \u00b7 '+Math.round(kcal)+' kcal attive \u00b7 '+Math.round(steps)+' passi';
+  }catch(e){}
+}
+async function hcConnect(){
+  if(!isNative()){ toast('\u2696\ufe0f Disponibile solo nell\'app Android'); return; }
+  const H=capPlugin('Health'); if(!H){ toast('\u26a0 Plugin Health non disponibile (npx cap sync?)'); return; }
+  hcSetStatus('Verifica Health Connect\u2026');
+  try{
+    const av=await H.isAvailable();
+    if(av&&av.available===false){ hcSetStatus('Health Connect non disponibile'); if(H.openHealthConnectSettings){ try{ await H.openHealthConnectSettings(); }catch(_){ } } return; }
+    await H.requestAuthorization({ read:['weight','steps','calories'] });
+    LS.set('nt_hc_on',true); hcRenderStatus(); await hcImportWeight(false); hcToday();
+  }catch(e){ hcSetStatus('Permessi negati o annullati'); }
+}
+function hcDisconnect(){ LS.set('nt_hc_on',false); LS.set('nt_hc_auto',false); hcRenderStatus(); toast('Health Connect scollegato (revoca i permessi dentro Health Connect)'); }
+function hcOpenSettings(){ const H=capPlugin('Health'); if(H&&H.openHealthConnectSettings){ try{ H.openHealthConnectSettings(); }catch(e){} } }
+function hcToggleAuto(){ const t=document.getElementById('hc-auto-tog'); LS.set('nt_hc_auto', t?t.checked:false); }
+function hcRenderStatus(){
+  const on=LS.get('nt_hc_on',false), native=isNative(), last=LS.get('nt_hc_lastimport',null);
+  const note=document.getElementById('hc-web-note'); if(note) note.style.display=native?'none':'block';
+  const btnC=document.getElementById('hc-btn-connect'); if(btnC) btnC.style.display=(native&&!on)?'block':'none';
+  const conn=document.getElementById('hc-connected'); if(conn) conn.style.display=(native&&on)?'block':'none';
+  const at=document.getElementById('hc-auto-tog'); if(at) at.checked=LS.get('nt_hc_auto',false);
+  const et=document.getElementById('hc-export-tog'); if(et) et.checked=LS.get('nt_hc_export',false);
+  const el=document.getElementById('hc-export-last'); if(el){ const lx=LS.get('nt_hc_export_last',null); el.textContent=lx?('Ultimo export: '+gdFmt(lx)):''; }
+  if(on) hcSetStatus(last?('Ultimo import: '+gdFmt(last)):'Collegato'); else hcSetStatus(native?'Non collegato':'Solo nell\'app Android');
+  if(native&&on) hcToday();
+}
+function hcAutoOnLaunch(){ if(isNative()&&LS.get('nt_hc_auto',false)&&LS.get('nt_hc_on',false)){ hcImportWeight(true); hcToday(); } }
+async function hcExportDay(dateStr,silent){
+  if(!isNative()){ if(!silent) toast('\u2b06\ufe0f Export disponibile solo nell\'app Android'); return; }
+  const N=capPlugin('NutritionHC'); if(!N){ if(!silent) toast('\u26a0 Plugin NutritionHC assente (ricompila l\'APK)'); return; }
+  const d=dateStr||today();
+  const day=(d===today())?{logged:logged}:LS.get('nt_'+d,null);
+  if(!day){ if(!silent) toast('Nessun dato per '+d); return; }
+  const t=dayTotals(day);
+  if(!t.k){ if(!silent) toast('Giorno vuoto, niente da esportare'); return; }
+  try{
+    const av=await N.isAvailable(); if(av&&av.available===false){ if(!silent) toast('Health Connect non disponibile'); return; }
+    await N.requestPermission();
+    await N.insertNutrition({ date:d, kcal:Math.round(t.k), protein:Math.round(t.p), carbs:Math.round(t.c), fat:Math.round(t.f), version:String(Date.now()) });
+    LS.set('nt_hc_export_last', new Date().toISOString());
+    hcRenderStatus();
+    if(!silent) toast('\u2b06\ufe0f Esportato su Health Connect');
+  }catch(e){ if(!silent) toast('\u26a0 Export fallito: '+(((e&&e.message)||'')+'').slice(0,40)); }
+}
+function hcExportToggle(){ const t=document.getElementById('hc-export-tog'); LS.set('nt_hc_export', t?t.checked:false); }
+
 
 // ═══ ARCH-3+4: Data versioning + migration engine ════════
 function runMigrations(fromVersion){
